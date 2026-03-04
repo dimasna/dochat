@@ -1,0 +1,91 @@
+name: dochat
+region: nyc
+
+services:
+  - name: web
+    github:
+      repo: dimasna/dochat
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: pnpm install && pnpm db:generate && pnpm --filter @dochat/web build
+    run_command: pnpm --filter @dochat/web start
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: CLERK_SECRET_KEY
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+        value: /sign-in
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_URL
+        value: /sign-up
+        scope: RUN_AND_BUILD_TIME
+      - key: DO_SPACES_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_BUCKET
+        scope: RUN_TIME
+        type: SECRET
+      - key: DO_SPACES_REGION
+        value: nyc3
+        scope: RUN_TIME
+      - key: DO_SPACES_ENDPOINT
+        value: https://nyc3.digitaloceanspaces.com
+        scope: RUN_TIME
+      - key: GRADIENT_MODEL_ACCESS_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GRADIENT_KB_UUID
+        scope: RUN_TIME
+        type: SECRET
+      - key: DIGITALOCEAN_API_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      - key: NODE_ENV
+        value: production
+        scope: RUN_AND_BUILD_TIME
+
+  - name: widget
+    github:
+      repo: dimasna/dochat
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: pnpm install && pnpm --filter widget build
+    run_command: pnpm --filter widget start
+    http_port: 3001
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: NEXT_PUBLIC_API_URL
+        value: ${web.PUBLIC_URL}
+        scope: RUN_AND_BUILD_TIME
+      - key: NODE_ENV
+        value: production
+        scope: RUN_AND_BUILD_TIME
+
+static_sites:
+  - name: embed
+    github:
+      repo: dimasna/dochat
+      branch: main
+      deploy_on_push: true
+    source_dir: apps/embed
+    build_command: pnpm install && pnpm --filter embed build
+    output_dir: dist
+    envs:
+      - key: VITE_WIDGET_URL
+        value: ${widget.PUBLIC_URL}
+        scope: BUILD_TIME

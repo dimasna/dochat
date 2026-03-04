@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Subscription ─────────────────────────────────────────
+
+model Subscription {
+  id        String   @id @default(cuid())
+  orgId     String   @unique // Clerk organization ID
+  status    String   @default("active") // active, inactive, cancelled
+  plan      String   @default("free")   // free, pro, enterprise
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Widget Settings ──────────────────────────────────────
+
+model WidgetSettings {
+  id           String  @id @default(cuid())
+  orgId        String  @unique // Clerk organization ID
+  greetMessage String  @default("Hi! How can I help you today?")
+  suggestion1  String?
+  suggestion2  String?
+  suggestion3  String?
+  // Vapi voice settings
+  vapiAssistantId  String?
+  vapiPhoneNumber  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── Plugins ──────────────────────────────────────────────
+
+model Plugin {
+  id        String  @id @default(cuid())
+  orgId     String  // Clerk organization ID
+  service   String  // "vapi"
+  config    Json    @default("{}")
+  enabled   Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([orgId, service])
+  @@index([orgId])
+}
+
+// ─── Contact Sessions ─────────────────────────────────────
+
+model ContactSession {
+  id           String   @id @default(cuid())
+  orgId        String   // Clerk organization ID
+  sessionToken String   @unique @default(cuid())
+  name         String
+  email        String
+  metadata     Json?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  conversations Conversation[]
+
+  @@index([orgId])
+  @@index([expiresAt])
+}
+
+// ─── Conversations ────────────────────────────────────────
+
+model Conversation {
+  id               String   @id @default(cuid())
+  orgId            String   // Clerk organization ID
+  contactSessionId String
+  status           String   @default("unresolved") // unresolved, escalated, resolved
+  gradientThreadId String?  // thread continuity for Gradient agent
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  contactSession ContactSession @relation(fields: [contactSessionId], references: [id], onDelete: Cascade)
+  messages       Message[]
+
+  @@index([orgId])
+  @@index([contactSessionId])
+  @@index([status, orgId])
+}
+
+// ─── Messages ─────────────────────────────────────────────
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String   // "user", "assistant", "system"
+  content        String   @db.Text
+  metadata       Json?    // tool calls, attachments, etc.
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+// ─── Knowledge Base (per-org, Gradient) ──────────────────
+
+model KnowledgeBase {
+  id             String   @id @default(cuid())
+  orgId          String   @unique // Clerk organization ID
+  gradientKbUuid String   // UUID of the KB in DigitalOcean GenAI
+  name           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ─── Knowledge Base Documents ─────────────────────────────
+
+model KnowledgeDocument {
+  id               String   @id @default(cuid())
+  orgId            String   // Clerk organization ID
+  sourceType       String   @default("file") // "file" | "website" | "text"
+  title            String
+  fileName         String?  // nullable — websites have no file
+  fileUrl          String?  // nullable — websites have no Spaces URL
+  spacesKey        String?  // nullable — websites have no Spaces key
+  sourceUrl        String?  // for website source type: the crawled URL
+  mimeType         String?
+  fileSize         Int?
+  gradientSourceId String?  // data source ID in Gradient KB
+  status           String   @default("pending") // pending, indexed, failed
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([orgId])
+}
