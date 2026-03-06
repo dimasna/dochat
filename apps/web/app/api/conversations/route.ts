@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
         include: {
           messages: { orderBy: { createdAt: "desc" }, take: 1 },
           contactSession: { select: { name: true, email: true } },
+          agent: { select: { id: true, name: true } },
         },
         orderBy: { updatedAt: "desc" },
       });
@@ -34,7 +35,8 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
-        contactSession: { select: { name: true, email: true, metadata: true } },
+        contactSession: { select: { id: true, name: true, email: true, metadata: true } },
+        agent: { select: { id: true, name: true } },
       },
       orderBy: { updatedAt: "desc" },
     });
@@ -49,7 +51,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { orgId, contactSessionId } = body;
+    const { orgId, contactSessionId, agentId } = body;
 
     if (!orgId || !contactSessionId) {
       return NextResponse.json(
@@ -69,14 +71,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Resolve agent
+    let resolvedAgentId = agentId;
+    if (!resolvedAgentId) {
+      const agent = await prisma.agent.findFirst({
+        where: { orgId },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!agent) {
+        return NextResponse.json(
+          { error: "No agent configured" },
+          { status: 404 },
+        );
+      }
+      resolvedAgentId = agent.id;
+    }
+
     // Get widget settings for greeting
     const settings = await prisma.widgetSettings.findUnique({
-      where: { orgId },
+      where: { agentId: resolvedAgentId },
     });
 
     const conversation = await prisma.conversation.create({
       data: {
         orgId,
+        agentId: resolvedAgentId,
         contactSessionId,
         status: "unresolved",
       },

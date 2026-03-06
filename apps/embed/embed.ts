@@ -9,22 +9,25 @@ import { chatBubbleIcon, closeIcon } from './icons';
   
   // Get configuration from script tag
   let organizationId: string | null = null;
+  let agentId: string | null = null;
   let position: 'bottom-right' | 'bottom-left' = EMBED_CONFIG.DEFAULT_POSITION;
-  
+
   // Try to get the current script
   const currentScript = document.currentScript as HTMLScriptElement;
   if (currentScript) {
     organizationId = currentScript.getAttribute('data-organization-id');
+    agentId = currentScript.getAttribute('data-agent-id');
     position = (currentScript.getAttribute('data-position') as 'bottom-right' | 'bottom-left') || EMBED_CONFIG.DEFAULT_POSITION;
   } else {
     // Fallback: find script tag by src
     const scripts = document.querySelectorAll('script[src*="embed"]');
-    const embedScript = Array.from(scripts).find(script => 
+    const embedScript = Array.from(scripts).find(script =>
       script.hasAttribute('data-organization-id')
     ) as HTMLScriptElement;
-    
+
     if (embedScript) {
       organizationId = embedScript.getAttribute('data-organization-id');
+      agentId = embedScript.getAttribute('data-agent-id');
       position = (embedScript.getAttribute('data-position') as 'bottom-right' | 'bottom-left') || EMBED_CONFIG.DEFAULT_POSITION;
     }
   }
@@ -119,6 +122,9 @@ import { chatBubbleIcon, closeIcon } from './icons';
   function buildWidgetUrl(): string {
     const params = new URLSearchParams();
     params.append('organizationId', organizationId!);
+    if (agentId) {
+      params.append('agentId', agentId);
+    }
     return `${EMBED_CONFIG.WIDGET_URL}?${params.toString()}`;
   }
   
@@ -193,18 +199,21 @@ import { chatBubbleIcon, closeIcon } from './icons';
   }
   
   // Function to reinitialize with new config
-  function reinit(newConfig: { organizationId?: string; position?: 'bottom-right' | 'bottom-left' }) {
+  function reinit(newConfig: { organizationId?: string; agentId?: string; position?: 'bottom-right' | 'bottom-left' }) {
     // Destroy existing widget
     destroy();
-    
+
     // Update config
     if (newConfig.organizationId) {
       organizationId = newConfig.organizationId;
     }
+    if (newConfig.agentId) {
+      agentId = newConfig.agentId;
+    }
     if (newConfig.position) {
       position = newConfig.position;
     }
-    
+
     // Reinitialize
     init();
   }

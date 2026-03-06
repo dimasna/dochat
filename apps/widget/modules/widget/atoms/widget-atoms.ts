@@ -19,6 +19,7 @@ export interface ContactSessionData {
 
 export const screenAtom = atom<WidgetScreen>("loading");
 export const organizationIdAtom = atom<string | null>(null);
+export const agentIdAtom = atom<string | null>(null);
 export const contactSessionAtomFamily = atomFamily((organizationId: string) => {
   return atomWithStorage<ContactSessionData | null>(`${CONTACT_SESSION_KEY}_${organizationId}`, null)
 });

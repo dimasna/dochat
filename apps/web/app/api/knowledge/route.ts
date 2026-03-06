@@ -2,12 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { getUploadUrl, getPublicUrl } from "@/lib/spaces";
-import {
-  getOrCreateKnowledgeBase,
-  addDataSourceToKb,
-  addWebCrawlerToKb,
-  triggerIndexing,
-} from "@/lib/knowledge-base";
 
 export async function GET() {
   try {
@@ -57,37 +51,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function indexInKb(
-  docId: string,
-  orgId: string,
-  indexFn: (kbUuid: string) => Promise<string | null>,
-) {
-  if (!process.env.DIGITALOCEAN_API_TOKEN) return;
-
-  try {
-    const kbUuid = await getOrCreateKnowledgeBase(orgId);
-    const sourceId = await indexFn(kbUuid);
-
-    if (sourceId) {
-      await triggerIndexing(kbUuid, [sourceId]);
-    }
-
-    await prisma.knowledgeDocument.update({
-      where: { id: docId },
-      data: {
-        gradientSourceId: sourceId,
-        status: sourceId ? "indexed" : "failed",
-      },
-    });
-  } catch (err) {
-    console.error("[indexInKb] Error:", err);
-    await prisma.knowledgeDocument.update({
-      where: { id: docId },
-      data: { status: "failed" },
-    });
-  }
-}
-
 async function handleFileSource(formData: FormData, orgId: string) {
   const file = formData.get("file") as File;
   if (!file) throw new Error("No file provided");
@@ -97,13 +60,18 @@ async function handleFileSource(formData: FormData, orgId: string) {
   const publicUrl = getPublicUrl(key);
 
   const fileBuffer = await file.arrayBuffer();
-  await fetch(uploadUrl, {
+  const uploadRes = await fetch(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": file.type },
     body: fileBuffer,
   });
 
-  const doc = await prisma.knowledgeDocument.create({
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`Failed to upload file to storage: ${uploadRes.status} ${errText}`);
+  }
+
+  return prisma.knowledgeDocument.create({
     data: {
       orgId,
       sourceType: "file",
@@ -113,35 +81,24 @@ async function handleFileSource(formData: FormData, orgId: string) {
       spacesKey: key,
       mimeType: file.type,
       fileSize: file.size,
-      status: "pending",
     },
   });
-
-  await indexInKb(doc.id, orgId, (kbUuid) => addDataSourceToKb(kbUuid, key));
-  return doc;
 }
 
 async function handleWebsiteSource(formData: FormData, orgId: string) {
   const url = formData.get("url") as string;
   const title = (formData.get("title") as string) || url;
-  const crawlingOption = (formData.get("crawlingOption") as string) || "SCOPED";
 
   if (!url) throw new Error("No URL provided");
 
-  const doc = await prisma.knowledgeDocument.create({
+  return prisma.knowledgeDocument.create({
     data: {
       orgId,
       sourceType: "website",
       title,
       sourceUrl: url,
-      status: "pending",
     },
   });
-
-  await indexInKb(doc.id, orgId, (kbUuid) =>
-    addWebCrawlerToKb(kbUuid, url, crawlingOption as "SCOPED" | "PATH" | "DOMAIN"),
-  );
-  return doc;
 }
 
 async function handleTextSource(formData: FormData, orgId: string) {
@@ -156,13 +113,18 @@ async function handleTextSource(formData: FormData, orgId: string) {
   const publicUrl = getPublicUrl(key);
 
   const textBuffer = new TextEncoder().encode(content);
-  await fetch(uploadUrl, {
+  const uploadRes = await fetch(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": "text/plain" },
     body: textBuffer,
   });
 
-  const doc = await prisma.knowledgeDocument.create({
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => "");
+    throw new Error(`Failed to upload text to storage: ${uploadRes.status} ${errText}`);
+  }
+
+  return prisma.knowledgeDocument.create({
     data: {
       orgId,
       sourceType: "text",
@@ -172,10 +134,6 @@ async function handleTextSource(formData: FormData, orgId: string) {
       spacesKey: key,
       mimeType: "text/plain",
       fileSize: textBuffer.byteLength,
-      status: "pending",
     },
   });
-
-  await indexInKb(doc.id, orgId, (kbUuid) => addDataSourceToKb(kbUuid, key));
-  return doc;
 }

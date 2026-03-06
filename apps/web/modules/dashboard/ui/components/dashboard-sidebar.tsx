@@ -2,6 +2,7 @@
 
 import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 import {
+  BotIcon,
   CreditCardIcon,
   InboxIcon,
   LayoutDashboardIcon,
@@ -40,6 +41,11 @@ const customerSupportItems = [
 ];
 
 const configurationItems = [
+  {
+    title: "Agents",
+    url: "/agents",
+    icon: BotIcon,
+  },
   {
     title: "Widget Customization",
     url: "/customization",

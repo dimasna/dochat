@@ -31,6 +31,10 @@ interface ConversationItem {
     email: string;
     metadata?: { timezone?: string } | null;
   };
+  agent?: {
+    id: string;
+    name: string;
+  };
   messages: Array<{
     id: string;
     role: string;
@@ -146,6 +150,11 @@ export const ConversationsPanel = () => {
                       <span className="truncate font-bold">
                         {conversation.contactSession.name}
                       </span>
+                      {conversation.agent && (
+                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {conversation.agent.name}
+                        </span>
+                      )}
                       <span className="ml-auto shrink-0 text-muted-foreground text-xs">
                         {formatDistanceToNow(new Date(conversation.createdAt))}
                       </span>
@@ -165,7 +174,7 @@ export const ConversationsPanel = () => {
                           {lastMessage?.content}
                         </span>
                       </div>
-                      <ConversationStatusIcon status={conversation.status} />
+                      <ConversationStatusIcon status={conversation.status as "unresolved" | "escalated" | "resolved"} />
                     </div>
                   </div>
                 </Link>

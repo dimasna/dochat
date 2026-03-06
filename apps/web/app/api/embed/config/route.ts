@@ -13,6 +13,8 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   const orgId = req.nextUrl.searchParams.get("orgId");
+  const agentId = req.nextUrl.searchParams.get("agentId");
+
   if (!orgId) {
     return NextResponse.json(
       { error: "orgId required" },
@@ -20,9 +22,25 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const settings = await prisma.widgetSettings.findUnique({
-    where: { orgId },
-  });
+  // If agentId provided, get that agent's settings
+  // Otherwise, find the first agent for this org
+  let settings;
+
+  if (agentId) {
+    settings = await prisma.widgetSettings.findUnique({
+      where: { agentId },
+    });
+  } else {
+    const agent = await prisma.agent.findFirst({
+      where: { orgId },
+      orderBy: { createdAt: "asc" },
+    });
+    if (agent) {
+      settings = await prisma.widgetSettings.findUnique({
+        where: { agentId: agent.id },
+      });
+    }
+  }
 
   if (!settings) {
     return NextResponse.json(

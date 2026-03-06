@@ -1,8 +1,10 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3005";
 
 export const api = {
-  validateOrg: async (orgId: string) => {
-    const res = await fetch(`${API_BASE}/api/embed/validate-org?orgId=${orgId}`);
+  validateOrg: async (orgId: string, agentId?: string) => {
+    const params = new URLSearchParams({ orgId });
+    if (agentId) params.set("agentId", agentId);
+    const res = await fetch(`${API_BASE}/api/embed/validate-org?${params}`);
     return res.json() as Promise<{ valid: boolean; reason?: string }>;
   },
 
@@ -11,8 +13,10 @@ export const api = {
     return res.json() as Promise<{ valid: boolean; sessionToken?: string }>;
   },
 
-  getConfig: async (orgId: string) => {
-    const res = await fetch(`${API_BASE}/api/embed/config?orgId=${orgId}`);
+  getConfig: async (orgId: string, agentId?: string) => {
+    const params = new URLSearchParams({ orgId });
+    if (agentId) params.set("agentId", agentId);
+    const res = await fetch(`${API_BASE}/api/embed/config?${params}`);
     if (!res.ok) return null;
     return res.json();
   },
@@ -31,11 +35,11 @@ export const api = {
     return res.json() as Promise<{ sessionId: string; sessionToken: string }>;
   },
 
-  createConversation: async (sessionToken: string, orgId: string) => {
+  createConversation: async (sessionToken: string, orgId: string, agentId?: string) => {
     const res = await fetch(`${API_BASE}/api/embed/conversations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionToken, orgId }),
+      body: JSON.stringify({ sessionToken, orgId, agentId }),
     });
     return res.json() as Promise<{ conversationId: string }>;
   },

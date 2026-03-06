@@ -13,6 +13,8 @@ export async function OPTIONS() {
 
 export async function GET(req: NextRequest) {
   const orgId = req.nextUrl.searchParams.get("orgId");
+  const agentId = req.nextUrl.searchParams.get("agentId");
+
   if (!orgId) {
     return NextResponse.json(
       { valid: false, reason: "Organization ID is required" },
@@ -20,22 +22,31 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // Since Clerk manages orgs, validate by checking if org has widget settings
-  // (created when org first configures their widget) or any data in our DB
-  const hasData = await prisma.widgetSettings.findUnique({
-    where: { orgId },
-    select: { id: true },
-  });
+  // If agentId provided, validate that specific agent
+  if (agentId) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { id: true, orgId: true },
+    });
 
-  // Also accept if there's a subscription record for this org
-  const hasSub = !hasData
-    ? await prisma.subscription.findUnique({
-        where: { orgId },
-        select: { id: true },
-      })
-    : hasData;
+    if (!agent || agent.orgId !== orgId) {
+      return NextResponse.json(
+        { valid: false, reason: "Agent not found" },
+        { headers: corsHeaders },
+      );
+    }
 
-  if (!hasData && !hasSub) {
+    return NextResponse.json({ valid: true }, { headers: corsHeaders });
+  }
+
+  // Otherwise validate org exists (has agent, subscription, or knowledge docs)
+  const [hasAgent, hasSub, hasDocs] = await Promise.all([
+    prisma.agent.findFirst({ where: { orgId }, select: { id: true } }),
+    prisma.subscription.findUnique({ where: { orgId }, select: { id: true } }),
+    prisma.knowledgeDocument.findFirst({ where: { orgId }, select: { id: true } }),
+  ]);
+
+  if (!hasAgent && !hasSub && !hasDocs) {
     return NextResponse.json(
       { valid: false, reason: "Organization not found" },
       { headers: corsHeaders },

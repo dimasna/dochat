@@ -97,7 +97,10 @@ export const UploadDialog = ({
         body: formData,
       });
 
-      if (!res.ok) throw new Error("Failed to add source");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to add source");
+      }
 
       queryClient.invalidateQueries({ queryKey: ["knowledge-docs"] });
       onFileUploaded?.();

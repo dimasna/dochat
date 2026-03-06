@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
 // Create a new conversation
 export async function POST(req: NextRequest) {
   try {
-    const { sessionToken, orgId } = await req.json();
+    const { sessionToken, orgId, agentId } = await req.json();
 
     if (!sessionToken || !orgId) {
       return NextResponse.json(
@@ -79,14 +79,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Load widget settings for greeting message
+    // Resolve the agent: use provided agentId, or find first agent for this org
+    let resolvedAgentId = agentId;
+    if (!resolvedAgentId) {
+      const agent = await prisma.agent.findFirst({
+        where: { orgId },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!agent) {
+        return NextResponse.json(
+          { error: "No agent configured for this organization" },
+          { status: 404, headers: corsHeaders },
+        );
+      }
+      resolvedAgentId = agent.id;
+    }
+
+    // Verify agent exists and belongs to org
+    const agent = await prisma.agent.findUnique({
+      where: { id: resolvedAgentId },
+    });
+    if (!agent || agent.orgId !== orgId) {
+      return NextResponse.json(
+        { error: "Agent not found" },
+        { status: 404, headers: corsHeaders },
+      );
+    }
+
+    // Load widget settings from agent
     const settings = await prisma.widgetSettings.findUnique({
-      where: { orgId },
+      where: { agentId: resolvedAgentId },
     });
 
     const conversation = await prisma.conversation.create({
       data: {
         orgId,
+        agentId: resolvedAgentId,
         contactSessionId: session.id,
         status: "unresolved",
       },

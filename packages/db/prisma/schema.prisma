@@ -10,28 +10,13 @@ datasource db {
 // ─── Subscription ─────────────────────────────────────────
 
 model Subscription {
-  id        String   @id @default(cuid())
-  orgId     String   @unique // Clerk organization ID
-  status    String   @default("active") // active, inactive, cancelled
-  plan      String   @default("free")   // free, pro, enterprise
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ─── Widget Settings ──────────────────────────────────────
-
-model WidgetSettings {
-  id           String  @id @default(cuid())
-  orgId        String  @unique // Clerk organization ID
-  greetMessage String  @default("Hi! How can I help you today?")
-  suggestion1  String?
-  suggestion2  String?
-  suggestion3  String?
-  // Vapi voice settings
-  vapiAssistantId  String?
-  vapiPhoneNumber  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  orgId              String   @unique // Clerk organization ID
+  status             String   @default("active") // active, inactive, cancelled
+  plan               String   @default("free")   // free, pro, enterprise
+  onboardingComplete Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 // ─── Plugins ──────────────────────────────────────────────
@@ -46,6 +31,51 @@ model Plugin {
   updatedAt DateTime @updatedAt
 
   @@unique([orgId, service])
+  @@index([orgId])
+}
+
+// ─── Agent (per-org, multiple per org — DigitalOcean GenAI) ──
+
+model Agent {
+  id              String   @id @default(cuid())
+  orgId           String   // Clerk organization ID (NOT unique — many agents per org)
+  agentUuid       String   // UUID of the agent in DigitalOcean GenAI
+  agentEndpoint   String   // Deployment URL (e.g., https://xxx.agents.do-ai.run)
+  agentAccessKey  String   // Access key for the agent endpoint
+  workspaceUuid   String   // DO workspace UUID
+  gradientKbUuid  String   // Each agent owns its own KB
+  name            String
+  description     String?
+  instruction     String?  @db.Text // Custom system prompt per agent
+  status          String   @default("provisioning") // provisioning, active, failed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  conversations  Conversation[]
+  widgetSettings WidgetSettings?
+  documents      AgentDocument[]
+
+  @@index([orgId])
+}
+
+// ─── Widget Settings (per-agent) ──────────────────────────
+
+model WidgetSettings {
+  id              String  @id @default(cuid())
+  agentId         String  @unique
+  orgId           String  // Clerk organization ID (for convenience queries)
+  greetMessage    String  @default("Hi! How can I help you today?")
+  suggestion1     String?
+  suggestion2     String?
+  suggestion3     String?
+  // Vapi voice settings
+  vapiAssistantId String?
+  vapiPhoneNumber String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
   @@index([orgId])
 }
 
@@ -73,16 +103,19 @@ model ContactSession {
 model Conversation {
   id               String   @id @default(cuid())
   orgId            String   // Clerk organization ID
+  agentId          String   // Which agent handles this conversation
   contactSessionId String
   status           String   @default("unresolved") // unresolved, escalated, resolved
   gradientThreadId String?  // thread continuity for Gradient agent
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  agent          Agent          @relation(fields: [agentId], references: [id])
   contactSession ContactSession @relation(fields: [contactSessionId], references: [id], onDelete: Cascade)
   messages       Message[]
 
   @@index([orgId])
+  @@index([agentId])
   @@index([contactSessionId])
   @@index([status, orgId])
 }
@@ -102,18 +135,7 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-// ─── Knowledge Base (per-org, Gradient) ──────────────────
-
-model KnowledgeBase {
-  id             String   @id @default(cuid())
-  orgId          String   @unique // Clerk organization ID
-  gradientKbUuid String   // UUID of the KB in DigitalOcean GenAI
-  name           String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-// ─── Knowledge Base Documents ─────────────────────────────
+// ─── Knowledge Base Documents (org-level, reusable across agents) ──
 
 model KnowledgeDocument {
   id               String   @id @default(cuid())
@@ -126,10 +148,26 @@ model KnowledgeDocument {
   sourceUrl        String?  // for website source type: the crawled URL
   mimeType         String?
   fileSize         Int?
-  gradientSourceId String?  // data source ID in Gradient KB
-  status           String   @default("pending") // pending, indexed, failed
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  agents AgentDocument[]
+
   @@index([orgId])
+}
+
+// ─── Agent ↔ Document join (tracks indexing per agent KB) ──
+
+model AgentDocument {
+  id                  String   @id @default(cuid())
+  agentId             String
+  knowledgeDocumentId String
+  gradientSourceId    String?  // data source ID in THIS agent's KB
+  status              String   @default("pending") // pending, indexed, failed
+  createdAt           DateTime @default(now())
+
+  agent    Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [knowledgeDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, knowledgeDocumentId])
 }

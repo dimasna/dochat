@@ -74,7 +74,8 @@
 
     <h2>Basic Usage</h2>
     <pre><code>&lt;script src="https://your-domain.com/widget.js"
-        data-organization-id="<span id="example-org-id">your-org-id</span>"&gt;
+        data-organization-id="<span id="example-org-id">your-org-id</span>"
+        data-agent-id="<span id="example-agent-id">your-agent-id</span>"&gt;
 &lt;/script&gt;</code></pre>
 
     <div class="config-form">
@@ -82,6 +83,10 @@
       <div class="form-group">
         <label for="orgId">Organization ID:</label>
         <input type="text" id="orgId" placeholder="Enter your organization ID" value="">
+      </div>
+      <div class="form-group">
+        <label for="agentId">Agent ID:</label>
+        <input type="text" id="agentId" placeholder="Enter your agent ID" value="">
       </div>
       <div class="form-group">
         <label for="position">Position:</label>
@@ -101,7 +106,7 @@
   </div>
 
   <!-- Load the widget with default config -->
-  <script type="module" src="/embed.ts" data-organization-id="your-org-id"></script>
+  <script type="module" src="/embed.ts" data-organization-id="your-org-id" data-agent-id="your-agent-id"></script>
 
   <script type="module">
     import { EMBED_CONFIG } from './config.ts';
@@ -113,6 +118,7 @@
     window.initWidget = function() {
       const config = {
         organizationId: document.getElementById('orgId').value || EMBED_CONFIG.DEFAULT_ORG_ID,
+        agentId: document.getElementById('agentId').value || undefined,
         position: document.getElementById('position').value
       };
 

@@ -25,7 +25,7 @@ export type IntegrationId = (typeof INTEGRATIONS)[number]["id"];
 
 export const WIDGET_BASE_URL = process.env.NEXT_PUBLIC_WIDGET_URL || "https://your-dochat-widget.ondigitalocean.app";
 
-export const HTML_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}"></script>`;
-export const REACT_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}"></script>`;
-export const NEXTJS_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}"></script>`;
-export const JAVASCRIPT_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}"></script>`;
+export const HTML_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}" data-agent-id="{{AGENT_ID}}"></script>`;
+export const REACT_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}" data-agent-id="{{AGENT_ID}}"></script>`;
+export const NEXTJS_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}" data-agent-id="{{AGENT_ID}}"></script>`;
+export const JAVASCRIPT_SCRIPT = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="{{ORGANIZATION_ID}}" data-agent-id="{{AGENT_ID}}"></script>`;

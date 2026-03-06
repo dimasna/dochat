@@ -7,14 +7,15 @@ import { WidgetView } from "@/modules/widget/ui/views/widget-view";
 interface Props {
   searchParams: Promise<{
     organizationId: string;
+    agentId?: string;
   }>
 };
 
 const Page = ({ searchParams }: Props) => {
-  const { organizationId } = use(searchParams);
+  const { organizationId, agentId } = use(searchParams);
 
   return (
-    <WidgetView organizationId={organizationId} />
+    <WidgetView organizationId={organizationId} agentId={agentId ?? null} />
   );
 };
 

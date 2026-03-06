@@ -9,19 +9,17 @@ import {
 export const createScript = (
   integrationId: IntegrationId,
   organizationId: string,
+  agentId?: string,
 ) => {
-  if (integrationId === "html") {
-    return HTML_SCRIPT.replace(/{{ORGANIZATION_ID}}/g, organizationId);
-  }
-  if (integrationId === "react") {
-    return REACT_SCRIPT.replace(/{{ORGANIZATION_ID}}/g, organizationId);
-  }
-  if (integrationId === "nextjs") {
-    return NEXTJS_SCRIPT.replace(/{{ORGANIZATION_ID}}/g, organizationId);
-  }
-  if (integrationId === "javascript") {
-    return JAVASCRIPT_SCRIPT.replace(/{{ORGANIZATION_ID}}/g, organizationId);
-  }
+  const scripts: Record<string, string> = {
+    html: HTML_SCRIPT,
+    react: REACT_SCRIPT,
+    nextjs: NEXTJS_SCRIPT,
+    javascript: JAVASCRIPT_SCRIPT,
+  };
 
-  return "";
+  const template = scripts[integrationId] || "";
+  return template
+    .replace(/{{ORGANIZATION_ID}}/g, organizationId)
+    .replace(/{{AGENT_ID}}/g, agentId || "YOUR_AGENT_ID");
 };

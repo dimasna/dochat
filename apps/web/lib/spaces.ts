@@ -6,9 +6,11 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+const region = process.env.DO_SPACES_REGION!;
+
 export const s3 = new S3Client({
-  endpoint: process.env.DO_SPACES_ENDPOINT!,
-  region: process.env.DO_SPACES_REGION!,
+  endpoint: `https://${region}.digitaloceanspaces.com`,
+  region,
   credentials: {
     accessKeyId: process.env.DO_SPACES_KEY!,
     secretAccessKey: process.env.DO_SPACES_SECRET!,

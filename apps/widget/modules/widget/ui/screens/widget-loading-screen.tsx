@@ -3,19 +3,20 @@
 import { useEffect, useState } from "react";
 import { LoaderIcon } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { contactSessionAtomFamily, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, vapiSecretsAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
+import { agentIdAtom, contactSessionAtomFamily, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { api } from "@/lib/api";
 
 type InitStep = "org" | "session" | "settings" | "done";
 
-export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string | null }) => {
+export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationId: string | null; agentId: string | null }) => {
   const [step, setStep] = useState<InitStep>("org")
   const [sessionValid, setSessionValid] = useState(false);
 
   const loadingMessage = useAtomValue(loadingMessageAtom);
   const setWidgetSettings = useSetAtom(widgetSettingsAtom);
   const setOrganizationId = useSetAtom(organizationIdAtom);
+  const setAgentId = useSetAtom(agentIdAtom);
   const setLoadingMessage = useSetAtom(loadingMessageAtom);
   const setErrorMessage = useSetAtom(errorMessageAtom);
   const setScreen = useSetAtom(screenAtom);
@@ -36,10 +37,11 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
 
     setLoadingMessage("Verifying organization...");
 
-    api.validateOrg(organizationId)
+    api.validateOrg(organizationId, agentId ?? undefined)
       .then((result) => {
         if (result.valid) {
           setOrganizationId(organizationId);
+          if (agentId) setAgentId(agentId);
           setStep("session");
         } else {
           setErrorMessage(result.reason || "Invalid configuration");
@@ -50,7 +52,7 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
         setErrorMessage("Unable to verify organization");
         setScreen("error");
       });
-  }, [step, organizationId, setErrorMessage, setScreen, setOrganizationId, setLoadingMessage]);
+  }, [step, organizationId, agentId, setErrorMessage, setScreen, setOrganizationId, setAgentId, setLoadingMessage]);
 
   // Step 2: Validate session (if exists)
   useEffect(() => {
@@ -84,7 +86,7 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
 
     setLoadingMessage("Loading widget settings...");
 
-    api.getConfig(organizationId)
+    api.getConfig(organizationId, agentId ?? undefined)
       .then((settings) => {
         if (settings) {
           setWidgetSettings(settings);
@@ -94,7 +96,7 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
       .catch(() => {
         setStep("done");
       });
-  }, [step, organizationId, setWidgetSettings, setLoadingMessage]);
+  }, [step, organizationId, agentId, setWidgetSettings, setLoadingMessage]);
 
   // Step 4: Navigate to appropriate screen
   useEffect(() => {

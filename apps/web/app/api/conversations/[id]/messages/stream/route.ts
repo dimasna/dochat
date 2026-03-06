@@ -25,7 +25,7 @@ export async function GET(
       );
 
       if (initialMessages.length > 0) {
-        lastMessageTime = initialMessages[initialMessages.length - 1].createdAt;
+        lastMessageTime = initialMessages[initialMessages.length - 1]!.createdAt;
       }
 
       // Poll for new messages

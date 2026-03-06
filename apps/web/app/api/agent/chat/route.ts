@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     // Generate agent response
     const agentResponse = await generateAgentResponse(
       conversationId,
-      conversation.orgId,
+      conversation.agentId,
       content,
     );
 

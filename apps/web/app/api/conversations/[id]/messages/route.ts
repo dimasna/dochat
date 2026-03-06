@@ -35,7 +35,7 @@ export async function POST(
   try {
     const { id: conversationId } = await params;
     const body = await req.json();
-    const { content, sessionToken } = body;
+    const { content } = body;
 
     if (!content) {
       return NextResponse.json({ error: "content required" }, { status: 400 });
@@ -76,7 +76,7 @@ export async function POST(
       try {
         const agentResponse = await generateAgentResponse(
           conversationId,
-          conversation.orgId,
+          conversation.agentId,
           content,
         );
 
@@ -90,8 +90,7 @@ export async function POST(
               : undefined,
           },
         });
-      } catch (agentError) {
-        // Save error as system message but don't fail the request
+      } catch {
         assistantMessage = await prisma.message.create({
           data: {
             conversationId,

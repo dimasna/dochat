@@ -74,7 +74,7 @@ export const WidgetInboxScreen = () => {
                   <p className="truncate text-sm">
                     {conversation.lastMessage?.text}
                   </p>
-                  <ConversationStatusIcon status={conversation.status} className="shrink-0" />
+                  <ConversationStatusIcon status={conversation.status as "unresolved" | "escalated" | "resolved"} className="shrink-0" />
                 </div>
               </div>
             </Button>

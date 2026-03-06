@@ -1,5 +1,3 @@
-import { prisma } from "@dochat/db";
-
 const DO_API_BASE = "https://api.digitalocean.com/v2/gen-ai";
 
 function getDoToken() {
@@ -9,75 +7,41 @@ function getDoToken() {
 }
 
 /**
- * Get the KB UUID for an org.
- * Uses DO_KNOWLEDGE_BASE_UUID env var as the shared KB,
- * or falls back to fetching the first available KB from the API.
+ * Create a new knowledge base in DigitalOcean GenAI.
+ * Returns the KB UUID. Does NOT save to DB — that's the Agent model's job.
  */
-export async function getOrCreateKnowledgeBase(orgId: string): Promise<string> {
-  // Check if org already has a KB mapping
-  const existing = await prisma.knowledgeBase.findUnique({
-    where: { orgId },
-  });
-
-  if (existing) {
-    return existing.gradientKbUuid;
-  }
-
-  // Use the shared KB UUID from env, or auto-detect
-  const kbUuid = await getSharedKbUuid();
-
-  // Store the mapping for this org
-  await prisma.knowledgeBase.create({
-    data: {
-      orgId,
-      gradientKbUuid: kbUuid,
-      name: `dochat-${orgId}`,
-    },
-  });
-
-  return kbUuid;
-}
-
-/**
- * Get the shared KB UUID from env or by listing existing KBs.
- */
-async function getSharedKbUuid(): Promise<string> {
-  const envUuid = process.env.DO_KNOWLEDGE_BASE_UUID;
-  if (envUuid) return envUuid;
-
+export async function createKnowledgeBase(name: string): Promise<string> {
   const doToken = getDoToken();
+  const embeddingModel = process.env.DO_EMBEDDING_MODEL_UUID;
+  if (!embeddingModel) throw new Error("DO_EMBEDDING_MODEL_UUID not configured");
+
   const res = await fetch(`${DO_API_BASE}/knowledge_bases`, {
-    headers: { Authorization: `Bearer ${doToken}` },
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${doToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      embedding_model_uuid: embeddingModel,
+      region: process.env.DO_AGENT_REGION || "tor1",
+      project_id: process.env.DO_PROJECT_ID,
+    }),
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to list knowledge bases: ${res.status}`);
+    const text = await res.text();
+    throw new Error(`Failed to create knowledge base: ${res.status} ${text}`);
   }
 
   const data = await res.json();
-  const kbs = data.knowledge_bases || [];
-  if (kbs.length === 0) {
-    throw new Error(
-      "No knowledge base found. Create one in the DigitalOcean console and set DO_KNOWLEDGE_BASE_UUID.",
-    );
-  }
-
-  return kbs[0].uuid;
+  const uuid = data.knowledge_base?.uuid;
+  if (!uuid) throw new Error("No UUID returned from KB creation");
+  return uuid;
 }
 
 /**
- * Get the KB UUID for an org, or null if none exists yet.
- */
-export async function getKnowledgeBaseUuid(orgId: string): Promise<string | null> {
-  const kb = await prisma.knowledgeBase.findUnique({
-    where: { orgId },
-    select: { gradientKbUuid: true },
-  });
-  return kb?.gradientKbUuid ?? null;
-}
-
-/**
- * Add a data source (file from Spaces) to the org's KB.
+ * Add a data source (file from Spaces) to a KB.
  */
 export async function addDataSourceToKb(
   kbUuid: string,
@@ -114,7 +78,7 @@ export async function addDataSourceToKb(
 }
 
 /**
- * Add a web crawler data source to the org's KB.
+ * Add a web crawler data source to a KB.
  */
 export async function addWebCrawlerToKb(
   kbUuid: string,
@@ -197,41 +161,13 @@ export async function removeDataSourceFromKb(
 }
 
 /**
- * Search the org's KB for relevant content.
+ * Delete a knowledge base entirely.
  */
-export async function searchKb(
-  kbUuid: string,
-  query: string,
-  numResults = 5,
-): Promise<string> {
+export async function deleteKnowledgeBase(kbUuid: string): Promise<void> {
   const doToken = getDoToken();
 
-  const res = await fetch(
-    `https://kbaas.do-ai.run/v1/${kbUuid}/retrieve`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${doToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query,
-        num_results: numResults,
-        alpha: 0.7,
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    return "Failed to search knowledge base.";
-  }
-
-  const data = await res.json();
-  const chunks = (data.results || [])
-    .map((r: { content: string }) => r.content)
-    .filter(Boolean);
-
-  return chunks.length > 0
-    ? chunks.join("\n---\n")
-    : "No relevant information found in the knowledge base.";
+  await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${doToken}` },
+  }).catch(() => {}); // Best effort
 }
