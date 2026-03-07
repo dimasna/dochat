@@ -12,9 +12,7 @@ import {
   ArrowLeftIcon,
   BotIcon,
   CopyIcon,
-  FileIcon,
-  FileTextIcon,
-  GlobeIcon,
+  FolderIcon,
   Loader2Icon,
   PenIcon,
   PlusIcon,
@@ -24,15 +22,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { UploadDialog } from "@/modules/files/ui/components/upload-dialog";
+import { useOrgEvents } from "@/hooks/use-org-events";
 
-interface AgentDoc {
+interface AgentKb {
   id: string;
-  status: string;
-  document: {
+  knowledgeBase: {
     id: string;
-    title: string;
-    sourceType: string;
+    name: string;
+    indexingStatus: string;
+    _count: { sources: number };
   };
 }
 
@@ -48,28 +46,16 @@ interface AgentDetail {
     suggestion2: string | null;
     suggestion3: string | null;
   } | null;
-  documents: AgentDoc[];
+  knowledgeBases: AgentKb[];
   _count: { conversations: number };
 }
 
 const WIDGET_BASE_URL = process.env.NEXT_PUBLIC_WIDGET_URL || "https://your-dochat-widget.ondigitalocean.app";
 
-function SourceIcon({ type }: { type: string }) {
-  switch (type) {
-    case "website":
-      return <GlobeIcon className="size-4 shrink-0" />;
-    case "text":
-      return <FileTextIcon className="size-4 shrink-0" />;
-    default:
-      return <FileIcon className="size-4 shrink-0" />;
-  }
-}
-
 export const AgentDetailView = ({ agentId }: { agentId: string }) => {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
   const [isAttaching, setIsAttaching] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -83,18 +69,25 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
       if (!res.ok) throw new Error("Failed to fetch agent");
       return res.json();
     },
-    // Poll every 5s while agent is provisioning
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === "provisioning" ? 5000 : false;
-    },
   });
 
-  // Fetch org-level documents for attaching
-  const { data: orgDocs = [] } = useQuery<Array<{ id: string; title: string; sourceType: string }>>({
-    queryKey: ["knowledge-docs"],
+  // Real-time updates via SSE
+  useOrgEvents((event) => {
+    if (event.type === "agent:status" && event.id === agentId) {
+      queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
+    }
+  });
+
+  // Fetch org-level knowledge bases for attaching
+  const { data: orgKbs = [] } = useQuery<Array<{
+    id: string;
+    name: string;
+    indexingStatus: string;
+    _count: { sources: number };
+  }>>({
+    queryKey: ["knowledge-bases"],
     queryFn: async () => {
-      const res = await fetch("/api/knowledge");
+      const res = await fetch("/api/knowledge-bases");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -119,36 +112,36 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
     }
   };
 
-  const handleAttachDoc = async (documentId: string) => {
+  const handleAttachKb = async (knowledgeBaseId: string) => {
     setIsAttaching(true);
     try {
-      const res = await fetch(`/api/agents/${agentId}/documents`, {
+      const res = await fetch(`/api/agents/${agentId}/knowledge-bases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentIds: [documentId] }),
+        body: JSON.stringify({ knowledgeBaseIds: [knowledgeBaseId] }),
       });
-      if (!res.ok) throw new Error("Failed to attach document");
-      toast.success("Document attached and indexing started");
+      if (!res.ok) throw new Error("Failed to attach knowledge base");
+      toast.success("Knowledge base attached. Agent is re-provisioning.");
       queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
     } catch {
-      toast.error("Failed to attach document");
+      toast.error("Failed to attach knowledge base");
     } finally {
       setIsAttaching(false);
     }
   };
 
-  const handleDetachDoc = async (documentId: string) => {
+  const handleDetachKb = async (knowledgeBaseId: string) => {
     try {
-      const res = await fetch(`/api/agents/${agentId}/documents`, {
+      const res = await fetch(`/api/agents/${agentId}/knowledge-bases`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ knowledgeBaseId }),
       });
-      if (!res.ok) throw new Error("Failed to detach document");
-      toast.success("Document removed from agent");
+      if (!res.ok) throw new Error("Failed to detach knowledge base");
+      toast.success("Knowledge base removed from agent");
       queryClient.invalidateQueries({ queryKey: ["agent", agentId] });
     } catch {
-      toast.error("Failed to remove document");
+      toast.error("Failed to remove knowledge base");
     }
   };
 
@@ -156,10 +149,6 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
     const code = `<script src="${WIDGET_BASE_URL}/widget.js" data-organization-id="ORG_ID" data-agent-id="${agentId}"></script>`;
     await navigator.clipboard.writeText(code);
     toast.success("Embed code copied!");
-  };
-
-  const handleFileUploaded = () => {
-    queryClient.invalidateQueries({ queryKey: ["knowledge-docs"] });
   };
 
   const handleStartEdit = () => {
@@ -215,247 +204,237 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
     );
   }
 
-  const attachedDocIds = new Set(agent.documents.map((d) => d.document.id));
-  const unattachedDocs = orgDocs.filter((d) => !attachedDocIds.has(d.id));
+  const attachedKbIds = new Set(agent.knowledgeBases.map((akb) => akb.knowledgeBase.id));
+  const unattachedKbs = orgKbs.filter(
+    (kb) => !attachedKbIds.has(kb.id) && kb.indexingStatus === "ready",
+  );
 
   return (
-    <>
-      <UploadDialog
-        open={uploadOpen}
-        onOpenChange={setUploadOpen}
-        onFileUploaded={handleFileUploaded}
-      />
-      <div className="flex min-h-screen flex-col bg-muted p-8">
-        <div className="mx-auto w-full max-w-screen-md">
-          {/* Header */}
-          <div className="mb-6">
-            <Link
-              href="/agents"
-              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
-            >
-              <ArrowLeftIcon className="size-4" />
-              Back to Agents
-            </Link>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-                  <BotIcon className="size-6 text-primary" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold">{agent.name}</h1>
-                    <Badge
-                      variant={agent.status === "active" ? "default" : "secondary"}
-                      className="capitalize"
-                    >
-                      {agent.status === "provisioning" && (
-                        <Loader2Icon className="size-3 mr-1 animate-spin" />
-                      )}
-                      {agent.status}
-                    </Badge>
-                  </div>
-                  {agent.description && (
-                    <p className="text-muted-foreground text-sm">{agent.description}</p>
-                  )}
-                </div>
+    <div className="flex min-h-screen flex-col bg-muted p-8">
+      <div className="mx-auto w-full max-w-screen-md">
+        {/* Header */}
+        <div className="mb-6">
+          <Link
+            href="/agents"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
+          >
+            <ArrowLeftIcon className="size-4" />
+            Back to Agents
+          </Link>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+                <BotIcon className="size-6 text-primary" />
               </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDelete}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <Loader2Icon className="size-4 animate-spin" />
-                ) : (
-                  <TrashIcon className="size-4" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-bold">{agent.name}</h1>
+                  <Badge
+                    variant={agent.status === "active" ? "default" : "secondary"}
+                    className="capitalize"
+                  >
+                    {agent.status === "provisioning" && (
+                      <Loader2Icon className="size-3 mr-1 animate-spin" />
+                    )}
+                    {agent.status}
+                  </Badge>
+                </div>
+                {agent.description && (
+                  <p className="text-muted-foreground text-sm">{agent.description}</p>
                 )}
-              </Button>
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <TrashIcon className="size-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {/* Provisioning banner */}
+        {isProvisioning && (
+          <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950 px-4 py-3 mb-6">
+            <div className="flex items-center gap-2">
+              <Loader2Icon className="size-4 animate-spin text-yellow-600 dark:text-yellow-400" />
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                Agent is being provisioned on DigitalOcean. Knowledge base management will be available once the agent is active.
+              </p>
             </div>
           </div>
+        )}
 
-          {/* Provisioning banner */}
-          {isProvisioning && (
-            <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950 px-4 py-3 mb-6">
-              <div className="flex items-center gap-2">
-                <Loader2Icon className="size-4 animate-spin text-yellow-600 dark:text-yellow-400" />
-                <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                  Agent is being provisioned on DigitalOcean. Document management will be available once the agent is active.
+        {/* Agent Settings */}
+        <div className="rounded-lg border bg-background p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold">Agent Settings</h2>
+            {!isEditing && !isProvisioning && (
+              <Button size="sm" variant="outline" onClick={handleStartEdit}>
+                <PenIcon className="size-3.5 mr-1" />
+                Edit
+              </Button>
+            )}
+          </div>
+
+          {isEditing ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-instruction">Instruction</Label>
+                <Textarea
+                  id="edit-instruction"
+                  value={editInstruction}
+                  onChange={(e) => setEditInstruction(e.target.value)}
+                  placeholder="Custom instructions that define how your agent behaves and responds."
+                  rows={5}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsEditing(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={isSaving || !editName.trim()}
+                >
+                  {isSaving ? (
+                    <Loader2Icon className="size-4 animate-spin" />
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Name</p>
+                <p className="text-sm">{agent.name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Instruction</p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {agent.instruction || <span className="text-muted-foreground italic">No instruction set</span>}
                 </p>
               </div>
             </div>
           )}
+        </div>
 
-          {/* Agent Settings */}
-          <div className="rounded-lg border bg-background p-5 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold">Agent Settings</h2>
-              {!isEditing && !isProvisioning && (
-                <Button size="sm" variant="outline" onClick={handleStartEdit}>
-                  <PenIcon className="size-3.5 mr-1" />
-                  Edit
-                </Button>
-              )}
-            </div>
+        {/* Integration Code */}
+        <div className="rounded-lg border bg-background p-5 mb-6">
+          <h2 className="font-semibold mb-3">Integration</h2>
+          <div className="flex items-center gap-2">
+            <Label className="shrink-0">Agent ID</Label>
+            <Input
+              readOnly
+              value={agent.id}
+              className="font-mono text-sm bg-muted"
+            />
+            <Button size="sm" variant="outline" onClick={handleCopyEmbedCode}>
+              <CopyIcon className="size-4 mr-1" />
+              Copy Embed
+            </Button>
+          </div>
+        </div>
 
-            {isEditing ? (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Name</Label>
-                  <Input
-                    id="edit-name"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-instruction">Instruction</Label>
-                  <Textarea
-                    id="edit-instruction"
-                    value={editInstruction}
-                    onChange={(e) => setEditInstruction(e.target.value)}
-                    placeholder="Custom instructions that define how your agent behaves and responds."
-                    rows={5}
-                  />
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsEditing(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={isSaving || !editName.trim()}
-                  >
-                    {isSaving ? (
-                      <Loader2Icon className="size-4 animate-spin" />
-                    ) : (
-                      "Save"
-                    )}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Name</p>
-                  <p className="text-sm">{agent.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Instruction</p>
-                  <p className="text-sm whitespace-pre-wrap">
-                    {agent.instruction || <span className="text-muted-foreground italic">No instruction set</span>}
-                  </p>
-                </div>
-              </div>
-            )}
+        <Separator className="my-6" />
+
+        {/* Knowledge Bases */}
+        <div className="rounded-lg border bg-background p-5 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Knowledge Bases</h2>
           </div>
 
-          {/* Integration Code */}
-          <div className="rounded-lg border bg-background p-5 mb-6">
-            <h2 className="font-semibold mb-3">Integration</h2>
-            <div className="flex items-center gap-2">
-              <Label className="shrink-0">Agent ID</Label>
-              <Input
-                readOnly
-                value={agent.id}
-                className="font-mono text-sm bg-muted"
-              />
-              <Button size="sm" variant="outline" onClick={handleCopyEmbedCode}>
-                <CopyIcon className="size-4 mr-1" />
-                Copy Embed
-              </Button>
+          {/* Attached knowledge bases */}
+          {agent.knowledgeBases.length > 0 && (
+            <div className="divide-y rounded-lg border mb-4">
+              {agent.knowledgeBases.map((agentKb) => (
+                <div key={agentKb.id} className="flex items-center gap-3 px-4 py-3">
+                  <FolderIcon className="size-4 shrink-0 text-primary" />
+                  <span className="flex-1 text-sm truncate">
+                    {agentKb.knowledgeBase.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {agentKb.knowledgeBase._count.sources} source{agentKb.knowledgeBase._count.sources !== 1 ? "s" : ""}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={() => handleDetachKb(agentKb.knowledgeBase.id)}
+                    disabled={isProvisioning}
+                  >
+                    <TrashIcon className="size-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
 
-          <Separator className="my-6" />
+          {agent.knowledgeBases.length === 0 && (
+            <p className="text-muted-foreground text-sm mb-4">
+              No knowledge bases attached.{!isProvisioning && " Attach knowledge bases below."}
+            </p>
+          )}
 
-          {/* Documents */}
-          <div className="rounded-lg border bg-background p-5 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold">Knowledge Base Documents</h2>
-              <Button
-                size="sm"
-                onClick={() => setUploadOpen(true)}
-                disabled={isProvisioning}
-              >
-                <PlusIcon className="size-4 mr-1" />
-                Upload New
-              </Button>
-            </div>
-
-            {/* Attached documents */}
-            {agent.documents.length > 0 && (
-              <div className="divide-y rounded-lg border mb-4">
-                {agent.documents.map((agentDoc) => (
-                  <div key={agentDoc.id} className="flex items-center gap-3 px-4 py-3">
-                    <SourceIcon type={agentDoc.document.sourceType} />
-                    <span className="flex-1 text-sm truncate">
-                      {agentDoc.document.title}
+          {/* Available org KBs to attach */}
+          {!isProvisioning && unattachedKbs.length > 0 && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Available knowledge bases ({unattachedKbs.length}):
+              </p>
+              <div className="divide-y rounded-lg border">
+                {unattachedKbs.map((kb) => (
+                  <div key={kb.id} className="flex items-center gap-3 px-4 py-3">
+                    <FolderIcon className="size-4 shrink-0 text-primary" />
+                    <span className="flex-1 text-sm truncate">{kb.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {kb._count.sources} source{kb._count.sources !== 1 ? "s" : ""}
                     </span>
-                    <Badge variant="outline" className="text-xs capitalize">
-                      {agentDoc.status}
-                    </Badge>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => handleDetachDoc(agentDoc.document.id)}
-                      disabled={isProvisioning}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleAttachKb(kb.id)}
+                      disabled={isAttaching}
                     >
-                      <TrashIcon className="size-3.5 text-muted-foreground" />
+                      Attach
                     </Button>
                   </div>
                 ))}
               </div>
-            )}
-
-            {agent.documents.length === 0 && (
-              <p className="text-muted-foreground text-sm mb-4">
-                No documents attached.{!isProvisioning && " Upload or attach documents below."}
-              </p>
-            )}
-
-            {/* Available org docs to attach */}
-            {!isProvisioning && unattachedDocs.length > 0 && (
-              <div>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Available documents ({unattachedDocs.length}):
-                </p>
-                <div className="divide-y rounded-lg border">
-                  {unattachedDocs.map((doc) => (
-                    <div key={doc.id} className="flex items-center gap-3 px-4 py-3">
-                      <SourceIcon type={doc.sourceType} />
-                      <span className="flex-1 text-sm truncate">{doc.title}</span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleAttachDoc(doc.id)}
-                        disabled={isAttaching}
-                      >
-                        Attach
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Stats */}
-          <div className="rounded-lg border bg-background p-5">
-            <h2 className="font-semibold mb-3">Stats</h2>
-            <div className="text-sm text-muted-foreground">
-              <p>{agent._count.conversations} conversation{agent._count.conversations !== 1 ? "s" : ""}</p>
-              <p>{agent.documents.length} document{agent.documents.length !== 1 ? "s" : ""} attached</p>
             </div>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="rounded-lg border bg-background p-5">
+          <h2 className="font-semibold mb-3">Stats</h2>
+          <div className="text-sm text-muted-foreground">
+            <p>{agent._count.conversations} conversation{agent._count.conversations !== 1 ? "s" : ""}</p>
+            <p>{agent.knowledgeBases.length} knowledge base{agent.knowledgeBases.length !== 1 ? "s" : ""} attached</p>
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 };

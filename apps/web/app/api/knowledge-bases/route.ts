@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { provisionAgent, tryFinalizeAgent } from "@/lib/agent";
+import { reconcileStaleKbStatuses } from "@/lib/knowledge-base";
 
 export async function GET() {
   try {
@@ -10,25 +10,31 @@ export async function GET() {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
 
-    const agents = await prisma.agent.findMany({
+    const kbs = await prisma.knowledgeBase.findMany({
       where: { orgId },
       include: {
-        _count: { select: { conversations: true, knowledgeBases: true } },
+        sources: {
+          orderBy: { createdAt: "asc" },
+        },
+        _count: { select: { sources: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // Fire-and-forget: finalize any agents stuck in "provisioning"
-    const provisioningAgents = agents.filter((a) => a.status === "provisioning");
-    if (provisioningAgents.length > 0) {
-      Promise.all(
-        provisioningAgents.map((a) => tryFinalizeAgent(a.id)),
-      ).catch((err) =>
-        console.error("[GET agents] tryFinalizeAgent failed:", err),
+    // Fire-and-forget: reconcile any KBs stuck in "indexing" for too long
+    const staleKbs = kbs.filter(
+      (kb) =>
+        ["indexing", "creating"].includes(kb.indexingStatus) &&
+        kb.gradientKbUuid &&
+        Date.now() - new Date(kb.updatedAt).getTime() > 3 * 60 * 1000, // 3 min
+    );
+    if (staleKbs.length > 0) {
+      reconcileStaleKbStatuses(orgId, staleKbs).catch((err) =>
+        console.error("[GET knowledge-bases] reconcile failed:", err),
       );
     }
 
-    return NextResponse.json(agents);
+    return NextResponse.json(kbs);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });
@@ -43,31 +49,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, description, instruction, knowledgeBaseIds } = body;
+    const { name } = body;
 
-    if (!name) {
+    if (!name || typeof name !== "string" || !name.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    const agent = await provisionAgent(orgId, name, instruction, knowledgeBaseIds);
-
-    // Update description if provided
-    if (description) {
-      await prisma.agent.update({
-        where: { id: agent.id },
-        data: { description },
-      });
-    }
-
-    // Create default widget settings for this agent
-    await prisma.widgetSettings.create({
+    const kb = await prisma.knowledgeBase.create({
       data: {
-        agentId: agent.id,
         orgId,
+        name: name.trim(),
       },
     });
 
-    return NextResponse.json(agent, { status: 201 });
+    return NextResponse.json(kb, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });

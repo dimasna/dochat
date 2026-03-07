@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
+import { eventBus } from "@/lib/event-bus";
 
 export async function GET(
   _req: NextRequest,
@@ -43,6 +44,14 @@ export async function PATCH(
     const conversation = await prisma.conversation.update({
       where: { id },
       data: { status },
+    });
+
+    // Emit status change event
+    eventBus.emit(conversation.orgId, {
+      type: "conversation:status",
+      id: conversation.id,
+      status: conversation.status,
+      conversationId: conversation.id,
     });
 
     return NextResponse.json(conversation);

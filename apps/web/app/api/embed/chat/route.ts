@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { generateAgentResponse } from "@/lib/agent";
+import { eventBus } from "@/lib/event-bus";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +58,20 @@ export async function POST(req: NextRequest) {
       data: { updatedAt: new Date() },
     });
 
+    // Emit user message event
+    eventBus.emit(conversation.orgId, {
+      type: "conversation:message",
+      id: userMessage.id,
+      status: "created",
+      conversationId,
+      message: {
+        id: userMessage.id,
+        role: userMessage.role,
+        content: userMessage.content,
+        createdAt: userMessage.createdAt.toISOString(),
+      },
+    });
+
     // Generate AI response if subscription active and conversation unresolved
     const subscription = await prisma.subscription.findUnique({
       where: { orgId: conversation.orgId },
@@ -95,6 +110,22 @@ export async function POST(req: NextRequest) {
             role: "assistant",
             content:
               "I'm sorry, I'm having trouble right now. Would you like me to connect you with a human support agent?",
+          },
+        });
+      }
+
+      // Emit assistant message event
+      if (assistantMessage) {
+        eventBus.emit(conversation.orgId, {
+          type: "conversation:message",
+          id: assistantMessage.id,
+          status: "created",
+          conversationId,
+          message: {
+            id: assistantMessage.id,
+            role: assistantMessage.role,
+            content: assistantMessage.content,
+            createdAt: assistantMessage.createdAt.toISOString(),
           },
         });
       }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
-import { generateAgentResponse } from "@/lib/agent";
+import { getAuthUser, getErrorStatus } from "@/lib/auth";
+import { eventBus } from "@/lib/event-bus";
 
 export async function GET(
   req: NextRequest,
@@ -33,6 +34,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { orgId } = await getAuthUser();
+    if (!orgId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { id: conversationId } = await params;
     const body = await req.json();
     const { content } = body;
@@ -41,73 +47,41 @@ export async function POST(
       return NextResponse.json({ error: "content required" }, { status: 400 });
     }
 
-    // Verify conversation exists
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
     });
 
-    if (!conversation) {
+    if (!conversation || conversation.orgId !== orgId) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
     }
 
-    // Save user message
-    const userMessage = await prisma.message.create({
-      data: { conversationId, role: "user", content },
+    // Internal/support user reply — save as "support" role, no AI trigger
+    const supportMessage = await prisma.message.create({
+      data: { conversationId, role: "support", content },
     });
 
-    // Update conversation timestamp
     await prisma.conversation.update({
       where: { id: conversationId },
       data: { updatedAt: new Date() },
     });
 
-    // Check if AI agent should respond
-    const subscription = await prisma.subscription.findUnique({
-      where: { orgId: conversation.orgId },
+    // Emit support message event
+    eventBus.emit(orgId, {
+      type: "conversation:message",
+      id: supportMessage.id,
+      status: "created",
+      conversationId,
+      message: {
+        id: supportMessage.id,
+        role: supportMessage.role,
+        content: supportMessage.content,
+        createdAt: supportMessage.createdAt.toISOString(),
+      },
     });
 
-    const shouldTriggerAgent =
-      conversation.status === "unresolved" &&
-      subscription?.status === "active";
-
-    let assistantMessage = null;
-
-    if (shouldTriggerAgent) {
-      try {
-        const agentResponse = await generateAgentResponse(
-          conversationId,
-          conversation.agentId,
-          content,
-        );
-
-        assistantMessage = await prisma.message.create({
-          data: {
-            conversationId,
-            role: "assistant",
-            content: agentResponse.content,
-            metadata: agentResponse.toolCalls
-              ? { toolCalls: agentResponse.toolCalls }
-              : undefined,
-          },
-        });
-      } catch {
-        assistantMessage = await prisma.message.create({
-          data: {
-            conversationId,
-            role: "assistant",
-            content:
-              "I'm sorry, I'm having trouble processing your request right now. Would you like me to connect you with a human support agent?",
-          },
-        });
-      }
-    }
-
-    return NextResponse.json({
-      userMessage,
-      assistantMessage,
-    });
+    return NextResponse.json({ supportMessage });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: getErrorStatus(error) });
   }
 }

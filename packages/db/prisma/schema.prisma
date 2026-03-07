@@ -10,13 +10,14 @@ datasource db {
 // ─── Subscription ─────────────────────────────────────────
 
 model Subscription {
-  id                 String   @id @default(cuid())
-  orgId              String   @unique // Clerk organization ID
-  status             String   @default("active") // active, inactive, cancelled
-  plan               String   @default("free")   // free, pro, enterprise
-  onboardingComplete Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  orgId                String   @unique // Clerk organization ID
+  status               String   @default("active") // active, inactive, cancelled
+  plan                 String   @default("free")   // free, pro, enterprise
+  onboardingComplete   Boolean  @default(false)
+  openSearchDatabaseId String?  // Shared OpenSearch DB ID for org's KBs
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }
 
 // ─── Plugins ──────────────────────────────────────────────
@@ -43,7 +44,6 @@ model Agent {
   agentEndpoint   String   // Deployment URL (e.g., https://xxx.agents.do-ai.run)
   agentAccessKey  String   // Access key for the agent endpoint
   workspaceUuid   String   // DO workspace UUID
-  gradientKbUuid  String?  // Each agent owns its own KB (created when first doc attached)
   name            String
   description     String?
   instruction     String?  @db.Text // Custom system prompt per agent
@@ -53,7 +53,7 @@ model Agent {
 
   conversations  Conversation[]
   widgetSettings WidgetSettings?
-  documents      AgentDocument[]
+  knowledgeBases AgentKnowledgeBase[]
 
   @@index([orgId])
 }
@@ -135,39 +135,55 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-// ─── Knowledge Base Documents (org-level, reusable across agents) ──
+// ─── Knowledge Base (folder — org-level, reusable across agents) ──
 
-model KnowledgeDocument {
-  id               String   @id @default(cuid())
-  orgId            String   // Clerk organization ID
-  sourceType       String   @default("file") // "file" | "website" | "text"
-  title            String
-  fileName         String?  // nullable — websites have no file
-  fileUrl          String?  // nullable — websites have no Spaces URL
-  spacesKey        String?  // nullable — websites have no Spaces key
-  sourceUrl        String?  // for website source type: the crawled URL
-  mimeType         String?
-  fileSize         Int?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+model KnowledgeBase {
+  id             String   @id @default(cuid())
+  orgId          String   // Clerk organization ID
+  name           String
+  gradientKbUuid String?  // Single DO KB UUID for this folder
+  indexingStatus String   @default("pending") // pending | creating | indexing | ready | failed
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  agents AgentDocument[]
+  sources KnowledgeSource[]
+  agents  AgentKnowledgeBase[]
 
   @@index([orgId])
 }
 
-// ─── Agent ↔ Document join (tracks indexing per agent KB) ──
+// ─── Knowledge Source (individual item within a KB folder) ──
 
-model AgentDocument {
-  id                  String   @id @default(cuid())
-  agentId             String
-  knowledgeDocumentId String
-  gradientSourceId    String?  // data source ID in THIS agent's KB
-  status              String   @default("pending") // pending, indexed, failed
-  createdAt           DateTime @default(now())
+model KnowledgeSource {
+  id                     String   @id @default(cuid())
+  knowledgeBaseId        String
+  sourceType             String   @default("file") // "file" | "website" | "text"
+  title                  String
+  fileName               String?  // nullable — websites have no file
+  storedObjectKey        String?  // DO GenAI presigned upload object key (file/text sources)
+  sourceUrl              String?  // for website source type: the crawled URL
+  mimeType               String?
+  fileSize               Int?
+  gradientDatasourceUuid String?  // DO datasource UUID within the parent KB
+  indexingStatus         String   @default("pending") // pending | indexing | ready | failed
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  agent    Agent             @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  document KnowledgeDocument @relation(fields: [knowledgeDocumentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
 
-  @@unique([agentId, knowledgeDocumentId])
+  @@index([knowledgeBaseId])
+}
+
+// ─── Agent ↔ KnowledgeBase join ──
+
+model AgentKnowledgeBase {
+  id              String   @id @default(cuid())
+  agentId         String
+  knowledgeBaseId String
+  createdAt       DateTime @default(now())
+
+  agent         Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, knowledgeBaseId])
 }

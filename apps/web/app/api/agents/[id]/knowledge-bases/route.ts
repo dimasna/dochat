@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { indexDocsIntoAgent } from "@/lib/agent";
-import { removeDataSourceFromKb } from "@/lib/knowledge-base";
+import { recreateAgentWithKbs } from "@/lib/agent";
 
 export async function GET(
   _req: NextRequest,
@@ -21,13 +20,17 @@ export async function GET(
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    const agentDocs = await prisma.agentDocument.findMany({
+    const agentKbs = await prisma.agentKnowledgeBase.findMany({
       where: { agentId: id },
-      include: { document: true },
+      include: {
+        knowledgeBase: {
+          include: { sources: true },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json(agentDocs);
+    return NextResponse.json(agentKbs);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });
@@ -56,27 +59,45 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { documentIds } = body;
+    const { knowledgeBaseIds } = body;
 
-    if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
-      return NextResponse.json({ error: "documentIds required" }, { status: 400 });
+    if (!knowledgeBaseIds || !Array.isArray(knowledgeBaseIds) || knowledgeBaseIds.length === 0) {
+      return NextResponse.json({ error: "knowledgeBaseIds required" }, { status: 400 });
     }
 
-    // Verify all docs belong to this org
-    const docs = await prisma.knowledgeDocument.findMany({
-      where: { id: { in: documentIds }, orgId },
+    // Verify all KBs are ready
+    const kbs = await prisma.knowledgeBase.findMany({
+      where: { id: { in: knowledgeBaseIds }, orgId, indexingStatus: "ready" },
     });
 
-    if (docs.length !== documentIds.length) {
-      return NextResponse.json({ error: "Some documents not found" }, { status: 400 });
+    if (kbs.length !== knowledgeBaseIds.length) {
+      return NextResponse.json({ error: "Some knowledge bases are not ready or not found" }, { status: 400 });
     }
 
-    // Index docs into agent's KB (fire-and-forget, creates KB on-demand)
-    indexDocsIntoAgent(agent.id, documentIds).catch((err) =>
-      console.error("[agent-docs] Failed to index:", err),
+    // Create AgentKnowledgeBase records
+    await prisma.agentKnowledgeBase.createMany({
+      data: knowledgeBaseIds.map((kbId: string) => ({
+        agentId: id,
+        knowledgeBaseId: kbId,
+      })),
+      skipDuplicates: true,
+    });
+
+    // Collect ALL KB UUIDs for this agent (existing + new)
+    const allAgentKbs = await prisma.agentKnowledgeBase.findMany({
+      where: { agentId: id },
+      include: { knowledgeBase: true },
+    });
+    const kbUuids = allAgentKbs
+      .map((akb) => akb.knowledgeBase.gradientKbUuid)
+      .filter((uuid): uuid is string => !!uuid);
+
+    // Recreate agent with all KBs (fire-and-forget)
+    recreateAgentWithKbs(agent.id, kbUuids).catch((err) =>
+      console.error("[agent-kbs] Failed to recreate agent:", err),
     );
 
-    return NextResponse.json({ success: true, count: documentIds.length }, { status: 201 });
+    return NextResponse.json({ success: true, count: knowledgeBaseIds.length }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });
@@ -101,32 +122,41 @@ export async function DELETE(
     }
 
     const body = await req.json();
-    const { documentId } = body;
+    const { knowledgeBaseId } = body;
 
-    if (!documentId) {
-      return NextResponse.json({ error: "documentId required" }, { status: 400 });
+    if (!knowledgeBaseId) {
+      return NextResponse.json({ error: "knowledgeBaseId required" }, { status: 400 });
     }
 
-    const agentDoc = await prisma.agentDocument.findUnique({
+    const agentKb = await prisma.agentKnowledgeBase.findUnique({
       where: {
-        agentId_knowledgeDocumentId: {
+        agentId_knowledgeBaseId: {
           agentId: id,
-          knowledgeDocumentId: documentId,
+          knowledgeBaseId,
         },
       },
     });
 
-    if (!agentDoc) {
-      return NextResponse.json({ error: "Document not attached to agent" }, { status: 404 });
-    }
-
-    // Remove from DO KB
-    if (agentDoc.gradientSourceId && agent.gradientKbUuid) {
-      await removeDataSourceFromKb(agent.gradientKbUuid, agentDoc.gradientSourceId);
+    if (!agentKb) {
+      return NextResponse.json({ error: "Knowledge base not attached to agent" }, { status: 404 });
     }
 
     // Remove from DB
-    await prisma.agentDocument.delete({ where: { id: agentDoc.id } });
+    await prisma.agentKnowledgeBase.delete({ where: { id: agentKb.id } });
+
+    // Collect remaining KB UUIDs
+    const remainingKbs = await prisma.agentKnowledgeBase.findMany({
+      where: { agentId: id },
+      include: { knowledgeBase: true },
+    });
+    const kbUuids = remainingKbs
+      .map((akb) => akb.knowledgeBase.gradientKbUuid)
+      .filter((uuid): uuid is string => !!uuid);
+
+    // Recreate agent with remaining KBs (fire-and-forget)
+    recreateAgentWithKbs(agent.id, kbUuids).catch((err) =>
+      console.error("[agent-kbs] Failed to recreate agent:", err),
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

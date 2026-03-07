@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   const [hasAgent, hasSub, hasDocs] = await Promise.all([
     prisma.agent.findFirst({ where: { orgId }, select: { id: true } }),
     prisma.subscription.findUnique({ where: { orgId }, select: { id: true } }),
-    prisma.knowledgeDocument.findFirst({ where: { orgId }, select: { id: true } }),
+    prisma.knowledgeBase.findFirst({ where: { orgId }, select: { id: true } }),
   ]);
 
   if (!hasAgent && !hasSub && !hasDocs) {

@@ -15,28 +15,18 @@ import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { toast } from "sonner";
-import { FileIcon, FileTextIcon, GlobeIcon, Loader2Icon } from "lucide-react";
+import { FolderIcon, Loader2Icon } from "lucide-react";
 
 interface CreateAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-interface OrgDoc {
+interface OrgKb {
   id: string;
-  title: string;
-  sourceType: string;
-}
-
-function SourceIcon({ type }: { type: string }) {
-  switch (type) {
-    case "website":
-      return <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />;
-    case "text":
-      return <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />;
-    default:
-      return <FileIcon className="size-4 shrink-0 text-muted-foreground" />;
-  }
+  name: string;
+  indexingStatus: string;
+  _count: { sources: number };
 }
 
 export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps) => {
@@ -45,20 +35,20 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instruction, setInstruction] = useState("");
-  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [selectedKbIds, setSelectedKbIds] = useState<Set<string>>(new Set());
 
-  const { data: orgDocs = [] } = useQuery<OrgDoc[]>({
-    queryKey: ["knowledge-docs"],
+  const { data: orgKbs = [] } = useQuery<OrgKb[]>({
+    queryKey: ["knowledge-bases"],
     queryFn: async () => {
-      const res = await fetch("/api/knowledge");
+      const res = await fetch("/api/knowledge-bases");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
     enabled: open,
   });
 
-  const toggleDoc = (id: string) => {
-    setSelectedDocIds((prev) => {
+  const toggleKb = (id: string) => {
+    setSelectedKbIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -84,7 +74,7 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
           name: name.trim(),
           description: description.trim() || undefined,
           instruction: instruction.trim() || undefined,
-          documentIds: selectedDocIds.size > 0 ? Array.from(selectedDocIds) : undefined,
+          knowledgeBaseIds: selectedKbIds.size > 0 ? Array.from(selectedKbIds) : undefined,
         }),
       });
 
@@ -98,7 +88,7 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
       setName("");
       setDescription("");
       setInstruction("");
-      setSelectedDocIds(new Set());
+      setSelectedKbIds(new Set());
       onOpenChange(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create agent";
@@ -107,6 +97,11 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
       setIsCreating(false);
     }
   };
+
+  const readyKbs = orgKbs.filter((kb) => kb.indexingStatus === "ready");
+  const indexingCount = orgKbs.filter((kb) =>
+    ["pending", "creating", "indexing"].includes(kb.indexingStatus),
+  ).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -154,31 +149,45 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
             </p>
           </div>
 
-          {/* Knowledge Base Documents */}
-          {orgDocs.length > 0 && (
+          {/* Knowledge Bases */}
+          {orgKbs.length > 0 && (
             <div className="space-y-2">
-              <Label>Knowledge Base (optional)</Label>
+              <Label>Knowledge Bases (optional)</Label>
               <p className="text-muted-foreground text-xs">
-                Select documents to attach to this agent&apos;s knowledge base.
+                Select knowledge bases to attach to this agent.
               </p>
-              <div className="divide-y rounded-lg border max-h-48 overflow-y-auto">
-                {orgDocs.map((doc) => (
-                  <label
-                    key={doc.id}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent cursor-pointer"
-                  >
-                    <Checkbox
-                      checked={selectedDocIds.has(doc.id)}
-                      onCheckedChange={() => toggleDoc(doc.id)}
-                    />
-                    <SourceIcon type={doc.sourceType} />
-                    <span className="flex-1 text-sm truncate">{doc.title}</span>
-                  </label>
-                ))}
-              </div>
-              {selectedDocIds.size > 0 && (
+              {readyKbs.length > 0 ? (
+                <div className="divide-y rounded-lg border max-h-48 overflow-y-auto">
+                  {readyKbs.map((kb) => (
+                    <label
+                      key={kb.id}
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-accent cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={selectedKbIds.has(kb.id)}
+                        onCheckedChange={() => toggleKb(kb.id)}
+                      />
+                      <FolderIcon className="size-4 shrink-0 text-primary" />
+                      <span className="flex-1 text-sm truncate">{kb.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {kb._count.sources} source{kb._count.sources !== 1 ? "s" : ""}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ) : (
                 <p className="text-xs text-muted-foreground">
-                  {selectedDocIds.size} document{selectedDocIds.size !== 1 ? "s" : ""} selected
+                  No ready knowledge bases available. Create and index knowledge bases first.
+                </p>
+              )}
+              {selectedKbIds.size > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {selectedKbIds.size} knowledge base{selectedKbIds.size !== 1 ? "s" : ""} selected
+                </p>
+              )}
+              {indexingCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {indexingCount} knowledge base{indexingCount !== 1 ? "s" : ""} still indexing
                 </p>
               )}
             </div>

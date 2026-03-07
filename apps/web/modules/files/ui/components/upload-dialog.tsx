@@ -38,6 +38,7 @@ interface UploadDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onFileUploaded?: () => void;
+  knowledgeBaseId?: string | null;
 }
 
 type SourceType = "file" | "website" | "text";
@@ -46,6 +47,7 @@ export const UploadDialog = ({
   open,
   onOpenChange,
   onFileUploaded,
+  knowledgeBaseId,
 }: UploadDialogProps) => {
   const queryClient = useQueryClient();
 
@@ -92,7 +94,11 @@ export const UploadDialog = ({
         formData.append("content", textContent);
       }
 
-      const res = await fetch("/api/knowledge", {
+      const url = knowledgeBaseId
+        ? `/api/knowledge-bases/${knowledgeBaseId}/sources`
+        : "/api/knowledge-bases";
+
+      const res = await fetch(url, {
         method: "POST",
         body: formData,
       });
@@ -102,7 +108,7 @@ export const UploadDialog = ({
         throw new Error(body.error || "Failed to add source");
       }
 
-      queryClient.invalidateQueries({ queryKey: ["knowledge-docs"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
       onFileUploaded?.();
       handleCancel();
     } catch (error) {
@@ -125,6 +131,7 @@ export const UploadDialog = ({
 
   const isDisabled =
     isSubmitting ||
+    !knowledgeBaseId ||
     (sourceType === "file" && uploadedFiles.length === 0) ||
     (sourceType === "website" && !websiteUrl) ||
     (sourceType === "text" && (!textTitle || !textContent));
@@ -141,10 +148,9 @@ export const UploadDialog = ({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add Knowledge Source</DialogTitle>
+          <DialogTitle>Add Source</DialogTitle>
           <DialogDescription>
-            Add content to your knowledge base for AI-powered search and
-            retrieval
+            Add a knowledge source to your knowledge base
           </DialogDescription>
         </DialogHeader>
 

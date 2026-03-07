@@ -1,13 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Skeleton } from "@workspace/ui/components/skeleton";
-import { BotIcon, FileTextIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import { BotIcon, FolderIcon, Loader2Icon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { CreateAgentDialog } from "../components/create-agent-dialog";
+import { useOrgEvents } from "@/hooks/use-org-events";
 
 interface AgentItem {
   id: string;
@@ -17,11 +18,12 @@ interface AgentItem {
   createdAt: string;
   _count: {
     conversations: number;
-    documents: number;
+    knowledgeBases: number;
   };
 }
 
 export const AgentsView = () => {
+  const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
   const { data: agents = [], isLoading } = useQuery<AgentItem[]>({
@@ -31,6 +33,13 @@ export const AgentsView = () => {
       if (!res.ok) throw new Error("Failed to fetch agents");
       return res.json();
     },
+  });
+
+  // Real-time updates via SSE
+  useOrgEvents((event) => {
+    if (event.type === "agent:status") {
+      queryClient.invalidateQueries({ queryKey: ["agents"] });
+    }
   });
 
   return (
@@ -86,6 +95,9 @@ export const AgentsView = () => {
                           variant={agent.status === "active" ? "default" : "secondary"}
                           className="text-xs capitalize"
                         >
+                          {agent.status === "provisioning" && (
+                            <Loader2Icon className="size-3 mr-1 animate-spin" />
+                          )}
                           {agent.status}
                         </Badge>
                       </div>
@@ -102,8 +114,8 @@ export const AgentsView = () => {
                       <span>{agent._count.conversations}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <FileTextIcon className="size-4" />
-                      <span>{agent._count.documents}</span>
+                      <FolderIcon className="size-4" />
+                      <span>{agent._count.knowledgeBases}</span>
                     </div>
                   </div>
                 </Link>

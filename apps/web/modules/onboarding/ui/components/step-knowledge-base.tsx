@@ -1,22 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@workspace/ui/components/button";
 import { Badge } from "@workspace/ui/components/badge";
 import {
   FileIcon,
   FileTextIcon,
+  FolderIcon,
   GlobeIcon,
   PlusIcon,
 } from "lucide-react";
 import { UploadDialog } from "@/modules/files/ui/components/upload-dialog";
 
-interface KnowledgeDoc {
+interface KnowledgeSource {
   id: string;
   title: string;
   sourceType: "file" | "website" | "text";
-  status: string;
+  indexingStatus: string;
+}
+
+interface KnowledgeBase {
+  id: string;
+  name: string;
+  indexingStatus: string;
+  sources: KnowledgeSource[];
+  _count: { sources: number };
 }
 
 interface StepKnowledgeBaseProps {
@@ -37,19 +46,41 @@ function SourceIcon({ type }: { type: string }) {
 export const StepKnowledgeBase = ({ onComplete }: StepKnowledgeBaseProps) => {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [defaultKbId, setDefaultKbId] = useState<string | null>(null);
 
-  const { data: docs = [] } = useQuery<KnowledgeDoc[]>({
-    queryKey: ["knowledge-docs"],
+  const { data: kbs = [] } = useQuery<KnowledgeBase[]>({
+    queryKey: ["knowledge-bases"],
     queryFn: async () => {
-      const res = await fetch("/api/knowledge");
+      const res = await fetch("/api/knowledge-bases");
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
   });
 
+  // Auto-create a default KB for onboarding if none exist
+  useEffect(() => {
+    if (kbs.length === 0 && !defaultKbId) {
+      fetch("/api/knowledge-bases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Getting Started" }),
+      })
+        .then((res) => res.json())
+        .then((kb) => {
+          setDefaultKbId(kb.id);
+          queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
+        })
+        .catch(console.error);
+    } else if (kbs.length > 0 && !defaultKbId) {
+      setDefaultKbId(kbs[0]!.id);
+    }
+  }, [kbs, defaultKbId, queryClient]);
+
   const handleFileUploaded = () => {
-    queryClient.invalidateQueries({ queryKey: ["knowledge-docs"] });
+    queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
   };
+
+  const totalSources = kbs.reduce((sum, kb) => sum + kb._count.sources, 0);
 
   return (
     <div className="space-y-6">
@@ -64,35 +95,37 @@ export const StepKnowledgeBase = ({ onComplete }: StepKnowledgeBaseProps) => {
       <div className="rounded-lg border bg-background">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <p className="text-sm text-muted-foreground">
-            {docs.length} source{docs.length !== 1 ? "s" : ""} added
+            {totalSources} source{totalSources !== 1 ? "s" : ""} added
           </p>
-          <Button size="sm" onClick={() => setUploadOpen(true)}>
+          <Button size="sm" onClick={() => setUploadOpen(true)} disabled={!defaultKbId}>
             <PlusIcon className="size-4 mr-1" />
             Add Source
           </Button>
         </div>
 
-        {docs.length > 0 && (
+        {kbs.length > 0 && kbs.some((kb) => kb.sources.length > 0) && (
           <div className="divide-y">
-            {docs.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 px-4 py-3"
-              >
-                <SourceIcon type={doc.sourceType} />
-                <span className="flex-1 text-sm truncate">{doc.title}</span>
-                <Badge variant="outline" className="capitalize text-xs">
-                  {doc.sourceType}
-                </Badge>
-                <Badge variant="outline" className="uppercase text-xs">
-                  {doc.status}
-                </Badge>
-              </div>
-            ))}
+            {kbs.flatMap((kb) =>
+              kb.sources.map((source) => (
+                <div
+                  key={source.id}
+                  className="flex items-center gap-3 px-4 py-3"
+                >
+                  <SourceIcon type={source.sourceType} />
+                  <span className="flex-1 text-sm truncate">{source.title}</span>
+                  <Badge variant="outline" className="capitalize text-xs">
+                    {source.sourceType}
+                  </Badge>
+                  <Badge variant="outline" className="uppercase text-xs">
+                    {source.indexingStatus}
+                  </Badge>
+                </div>
+              )),
+            )}
           </div>
         )}
 
-        {docs.length === 0 && (
+        {totalSources === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <FileTextIcon className="size-10 text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">
@@ -106,10 +139,11 @@ export const StepKnowledgeBase = ({ onComplete }: StepKnowledgeBaseProps) => {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onFileUploaded={handleFileUploaded}
+        knowledgeBaseId={defaultKbId}
       />
 
       <div className="flex justify-end">
-        <Button onClick={onComplete} disabled={docs.length === 0}>
+        <Button onClick={onComplete} disabled={totalSources === 0}>
           Next
         </Button>
       </div>

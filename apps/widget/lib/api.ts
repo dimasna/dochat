@@ -86,4 +86,8 @@ export const api = {
     });
     return res.json();
   },
+
+  getMessagesStreamUrl: (conversationId: string, sessionToken: string) => {
+    return `${API_BASE}/api/embed/conversations/${conversationId}/messages/stream?sessionToken=${sessionToken}`;
+  },
 };

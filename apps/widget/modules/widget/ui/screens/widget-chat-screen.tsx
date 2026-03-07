@@ -27,7 +27,7 @@ import {
   AIMessageContent,
 } from "@workspace/ui/components/ai/message";
 import { AIResponse } from "@workspace/ui/components/ai/response";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 
 interface MessageData {
@@ -65,26 +65,46 @@ export const WidgetChatScreen = () => {
     return [widgetSettings.suggestion1, widgetSettings.suggestion2, widgetSettings.suggestion3].filter(Boolean) as string[];
   }, [widgetSettings]);
 
-  // Load messages and poll for updates
-  const loadMessages = useCallback(async () => {
-    if (!conversationId || !contactSession?.sessionToken) return;
-
-    try {
-      const msgs = await api.getMessages(conversationId, contactSession.sessionToken);
-      setMessages(msgs);
-
-      const conv = await api.getConversation(conversationId, contactSession.sessionToken);
-      setConversationStatus(conv.status);
-    } catch {
-      // ignore
-    }
-  }, [conversationId, contactSession?.sessionToken]);
+  // SSE for real-time messages
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    loadMessages();
-    const interval = setInterval(loadMessages, 2000);
-    return () => clearInterval(interval);
-  }, [loadMessages]);
+    if (!conversationId || !contactSession?.sessionToken) return;
+
+    const url = api.getMessagesStreamUrl(conversationId, contactSession.sessionToken);
+    const es = new EventSource(url);
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "init") {
+          setMessages(data.messages);
+        } else if (data.type === "message") {
+          setMessages((prev) => {
+            // Deduplicate and replace optimistic temp messages
+            const filtered = prev.filter(
+              (m) => m.id !== data.message.id && !m.id.startsWith("temp-"),
+            );
+            return [...filtered, data.message];
+          });
+        } else if (data.type === "status") {
+          setConversationStatus(data.status);
+        }
+      } catch {
+        // Ignore malformed events
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [conversationId, contactSession?.sessionToken]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -99,7 +119,7 @@ export const WidgetChatScreen = () => {
 
     form.reset();
 
-    // Optimistically add user message
+    // Optimistically add user message (SSE will replace with real message)
     const tempMsg: MessageData = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -113,9 +133,6 @@ export const WidgetChatScreen = () => {
       sessionToken: contactSession.sessionToken,
       content: values.message,
     });
-
-    // Refresh messages to get the real ones + AI response
-    await loadMessages();
   };
 
   return (
@@ -140,23 +157,26 @@ export const WidgetChatScreen = () => {
       </WidgetHeader>
       <AIConversation>
         <AIConversationContent>
-          {messages.map((message) => (
-            <AIMessage
-              from={message.role === "user" ? "user" : "assistant"}
-              key={message.id}
-            >
-              <AIMessageContent>
-                <AIResponse>{message.content}</AIResponse>
-              </AIMessageContent>
-              {message.role === "assistant" && (
-                <DicebearAvatar
-                  imageUrl="/logo.svg"
-                  seed="assistant"
-                  size={32}
-                />
-              )}
-            </AIMessage>
-          ))}
+          {messages.map((message) => {
+            const isCustomer = message.role === "user";
+            return (
+              <AIMessage
+                from={isCustomer ? "user" : "assistant"}
+                key={message.id}
+              >
+                <AIMessageContent>
+                  <AIResponse>{message.content}</AIResponse>
+                </AIMessageContent>
+                {!isCustomer && (
+                  <DicebearAvatar
+                    imageUrl="/logo.svg"
+                    seed="assistant"
+                    size={32}
+                  />
+                )}
+              </AIMessage>
+            );
+          })}
         </AIConversationContent>
       </AIConversation>
       {messages.length === 1 && (

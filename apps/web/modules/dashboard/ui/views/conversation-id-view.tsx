@@ -27,7 +27,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DicebearAvatar } from "@workspace/ui/components/dicebear-avatar";
 import { ConversationStatusButton } from "../components/conversation-status-button";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@workspace/ui/lib/utils";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { toast } from "sonner";
@@ -187,22 +187,31 @@ export const ConversationIdView = ({
       </header>
       <AIConversation className="max-h-[calc(100vh-180px)]">
         <AIConversationContent>
-          {messages.map((message) => (
-            <AIMessage
-              from={message.role === "user" ? "assistant" : "user"}
-              key={message.id}
-            >
-              <AIMessageContent>
-                <AIResponse>{message.content}</AIResponse>
-              </AIMessageContent>
-              {message.role === "user" && (
-                <DicebearAvatar
-                  seed={conversation?.contactSession?.id ?? "user"}
-                  size={32}
-                />
-              )}
-            </AIMessage>
-          ))}
+          {messages.map((message) => {
+            // Dashboard perspective: "user" = customer (right), "assistant"/"support" = our side (left)
+            const isCustomer = message.role === "user";
+            return (
+              <AIMessage
+                from={isCustomer ? "assistant" : "user"}
+                key={message.id}
+              >
+                <AIMessageContent>
+                  {message.role === "support" && (
+                    <span className="text-xs text-muted-foreground mb-1 block">
+                      Operator
+                    </span>
+                  )}
+                  <AIResponse>{message.content}</AIResponse>
+                </AIMessageContent>
+                {isCustomer && (
+                  <DicebearAvatar
+                    seed={conversation?.contactSession?.id ?? "user"}
+                    size={32}
+                  />
+                )}
+              </AIMessage>
+            );
+          })}
         </AIConversationContent>
         <AIConversationScrollButton />
       </AIConversation>

@@ -13,19 +13,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const { name, instruction, greetMessage, suggestion1, suggestion2, suggestion3 } = body;
 
-    // Get all org docs to attach to the agent
-    const docs = await prisma.knowledgeDocument.findMany({
-      where: { orgId },
+    // Get only indexed ("ready") KBs to attach to the agent
+    const kbs = await prisma.knowledgeBase.findMany({
+      where: { orgId, indexingStatus: "ready" },
       select: { id: true },
     });
-    const documentIds = docs.map((d) => d.id);
+    const knowledgeBaseIds = kbs.map((kb) => kb.id);
 
     // Provision agent (fire-and-forget deployment)
     const agent = await provisionAgent(
       orgId,
       name || "Support Agent",
       instruction || undefined,
-      documentIds.length > 0 ? documentIds : undefined,
+      knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
     );
 
     // Create widget settings for the agent

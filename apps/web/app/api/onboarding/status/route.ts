@@ -16,8 +16,8 @@ export async function GET() {
       create: { orgId, onboardingComplete: false },
     });
 
-    const [knowledgeDocs, agent] = await Promise.all([
-      prisma.knowledgeDocument.count({ where: { orgId } }),
+    const [knowledgeBases, agent] = await Promise.all([
+      prisma.knowledgeBase.count({ where: { orgId } }),
       prisma.agent.findFirst({ where: { orgId } }),
     ]);
 
@@ -35,7 +35,7 @@ export async function GET() {
     return NextResponse.json({
       complete: false,
       steps: {
-        knowledgeBase: knowledgeDocs > 0,
+        knowledgeBase: knowledgeBases > 0,
         agent: !!agent,
       },
     });

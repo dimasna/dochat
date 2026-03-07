@@ -19,8 +19,15 @@ export async function GET(
       where: { id },
       include: {
         widgetSettings: true,
-        documents: {
-          include: { document: true },
+        knowledgeBases: {
+          include: {
+            knowledgeBase: {
+              include: {
+                sources: true,
+                _count: { select: { sources: true } },
+              },
+            },
+          },
         },
         _count: { select: { conversations: true } },
       },
@@ -38,8 +45,15 @@ export async function GET(
           where: { id },
           include: {
             widgetSettings: true,
-            documents: {
-              include: { document: true },
+            knowledgeBases: {
+              include: {
+                knowledgeBase: {
+                  include: {
+                    sources: true,
+                    _count: { select: { sources: true } },
+                  },
+                },
+              },
             },
             _count: { select: { conversations: true } },
           },
@@ -74,7 +88,7 @@ export async function PATCH(
     const body = await req.json();
     const { name, description, instruction } = body;
 
-    // Sync name/instruction to DO agent (skip if still provisioning — agent may not be deployed yet)
+    // Sync name/instruction to DO agent (skip if still provisioning)
     if (agent.status === "active" && agent.agentUuid) {
       const doUpdates: { name?: string; instruction?: string } = {};
       if (name !== undefined) doUpdates.name = name;
@@ -85,7 +99,6 @@ export async function PATCH(
           await updateDoAgent(agent.agentUuid, doUpdates);
         } catch (err) {
           console.error("[PATCH agent] DO update failed:", err);
-          // Continue — still update DB
         }
       }
     }
@@ -123,14 +136,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    // Delete from DO (agent + workspace + KB)
+    // Delete from DO (agent + workspace only — KBs are owned by knowledge bases, not agents)
     await deleteDoAgent({
       agentUuid: agent.agentUuid,
       workspaceUuid: agent.workspaceUuid,
-      gradientKbUuid: agent.gradientKbUuid,
     });
 
-    // Delete from DB (cascade deletes AgentDocument, WidgetSettings, etc.)
+    // Delete from DB (cascade deletes AgentKnowledgeBase, WidgetSettings, etc.)
     await prisma.agent.delete({ where: { id } });
 
     return NextResponse.json({ success: true });
