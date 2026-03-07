@@ -2,6 +2,7 @@ import { prisma } from "@dochat/db";
 import { SUPPORT_AGENT_PROMPT } from "@dochat/shared";
 import {
   createKnowledgeBase,
+  buildDatasource,
   addDataSourceToKb,
   addWebCrawlerToKb,
   triggerIndexing,
@@ -25,8 +26,9 @@ interface AgentInfo {
 
 /**
  * Provision a new DO GenAI agent for an org.
- * Creates: KB → Agent → Workspace → saves to DB.
- * Does NOT wait for deployment — returns immediately with status "provisioning".
+ * Always creates agent first (without KB) since DO KB provisioning takes ~7min.
+ * If documentIds provided, KB creation + indexing + agent re-link happen async.
+ * Returns immediately with status "provisioning".
  */
 export async function provisionAgent(
   orgId: string,
@@ -36,13 +38,15 @@ export async function provisionAgent(
 ) {
   const doToken = getDoToken();
 
-  // 1. Create knowledge base
-  const gradientKbUuid = await createKnowledgeBase(`${name}-kb`);
+  // Sanitize name for DO API (alphanumeric, hyphens, underscores only)
+  const safeName = name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").toLowerCase();
 
-  // 2. Create agent with KB attached
   const modelUuid = process.env.DO_AGENT_MODEL_UUID;
   if (!modelUuid) throw new Error("DO_AGENT_MODEL_UUID not configured");
 
+  const agentInstruction = instruction || SUPPORT_AGENT_PROMPT;
+
+  // 1. Create agent WITHOUT KB (KB provisioning takes ~7min, so we do it async)
   const agentRes = await fetch(`${DO_API_BASE}/agents`, {
     method: "POST",
     headers: {
@@ -50,20 +54,17 @@ export async function provisionAgent(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      name,
+      name: safeName,
       model_uuid: modelUuid,
-      instruction: instruction || SUPPORT_AGENT_PROMPT,
+      instruction: agentInstruction,
       description: `Dochat agent: ${name}`,
       region: process.env.DO_AGENT_REGION || "tor1",
       project_id: process.env.DO_PROJECT_ID,
-      knowledge_base_uuid: [gradientKbUuid],
     }),
   });
 
   if (!agentRes.ok) {
     const text = await agentRes.text();
-    // Cleanup KB on failure
-    await deleteKnowledgeBase(gradientKbUuid);
     throw new Error(`Failed to create agent: ${agentRes.status} ${text}`);
   }
 
@@ -71,7 +72,7 @@ export async function provisionAgent(
   const agentUuid = agentData.agent?.uuid;
   if (!agentUuid) throw new Error("No UUID returned from agent creation");
 
-  // 3. Create workspace for this agent
+  // 2. Create workspace for this agent
   let workspaceUuid = "";
   try {
     const wsRes = await fetch(`${DO_API_BASE}/workspaces`, {
@@ -81,7 +82,7 @@ export async function provisionAgent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        name: `${name}-workspace`,
+        name: `${safeName}-workspace`,
         description: `Workspace for ${name}`,
         agent_uuids: [agentUuid],
       }),
@@ -97,7 +98,7 @@ export async function provisionAgent(
     console.warn("[agent] Workspace creation error:", err);
   }
 
-  // 4. Save to DB
+  // 3. Save to DB
   const agent = await prisma.agent.create({
     data: {
       orgId,
@@ -105,16 +106,15 @@ export async function provisionAgent(
       agentEndpoint: "",
       agentAccessKey: "",
       workspaceUuid,
-      gradientKbUuid,
       name,
-      instruction: instruction || SUPPORT_AGENT_PROMPT,
+      instruction: agentInstruction,
       status: "provisioning",
     },
   });
 
-  // 5. Index documents into agent's KB (fire-and-forget)
+  // 4. If docs provided, handle KB creation + indexing + agent re-link async
   if (documentIds && documentIds.length > 0) {
-    indexDocsIntoAgent(agent.id, gradientKbUuid, documentIds).catch((err) =>
+    indexDocsIntoAgent(agent.id, documentIds).catch((err) =>
       console.error("[agent] Failed to index docs:", err),
     );
   }
@@ -124,66 +124,355 @@ export async function provisionAgent(
 
 /**
  * Index org-level documents into an agent's KB.
- * Creates AgentDocument records tracking each doc's status in this agent's KB.
+ * If no KB exists yet: creates KB → waits for DB provisioning (~7min) →
+ * indexes docs → waits for indexing → recreates DO agent with KB attached.
+ * (DO API only links KBs at agent creation time, and requires KB to be indexed first.)
  */
 export async function indexDocsIntoAgent(
   agentId: string,
-  gradientKbUuid: string,
   documentIds: string[],
 ) {
+  let agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+  let gradientKbUuid = agent.gradientKbUuid;
+
   const docs = await prisma.knowledgeDocument.findMany({
     where: { id: { in: documentIds } },
   });
 
-  for (const doc of docs) {
-    try {
-      let sourceId: string | null = null;
+  if (docs.length === 0) return;
 
-      if (doc.sourceType === "website" && doc.sourceUrl) {
-        sourceId = await addWebCrawlerToKb(gradientKbUuid, doc.sourceUrl);
-      } else if (doc.spacesKey) {
-        sourceId = await addDataSourceToKb(gradientKbUuid, doc.spacesKey);
+  // If no KB exists yet, create it and go through the full provisioning flow
+  if (!gradientKbUuid) {
+    // Find the first doc that has indexable content
+    let firstDatasource = null;
+    let firstDocIndex = -1;
+    for (let i = 0; i < docs.length; i++) {
+      const ds = buildDatasource(docs[i]!);
+      if (ds) {
+        firstDocIndex = i;
+        firstDatasource = ds;
+        break;
       }
-
-      if (sourceId) {
-        await triggerIndexing(gradientKbUuid, [sourceId]);
-      }
-
-      await prisma.agentDocument.upsert({
-        where: {
-          agentId_knowledgeDocumentId: {
-            agentId,
-            knowledgeDocumentId: doc.id,
-          },
-        },
-        update: {
-          gradientSourceId: sourceId,
-          status: sourceId ? "indexed" : "failed",
-        },
-        create: {
-          agentId,
-          knowledgeDocumentId: doc.id,
-          gradientSourceId: sourceId,
-          status: sourceId ? "indexed" : "failed",
-        },
-      });
-    } catch (err) {
-      console.error(`[indexDocsIntoAgent] Failed for doc ${doc.id}:`, err);
-      await prisma.agentDocument.upsert({
-        where: {
-          agentId_knowledgeDocumentId: {
-            agentId,
-            knowledgeDocumentId: doc.id,
-          },
-        },
-        update: { status: "failed" },
-        create: {
-          agentId,
-          knowledgeDocumentId: doc.id,
-          status: "failed",
-        },
-      }).catch(() => {});
     }
+
+    if (firstDocIndex === -1 || !firstDatasource) {
+      console.error("[indexDocsIntoAgent] No indexable documents found");
+      return;
+    }
+
+    const firstDoc = docs[firstDocIndex]!;
+
+    // Create KB with the first datasource
+    const safeName = agent.name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").toLowerCase();
+    const { kbUuid, datasourceUuids } = await createKnowledgeBase(
+      `${safeName}-kb`,
+      [firstDatasource],
+    );
+    gradientKbUuid = kbUuid;
+
+    // Save KB UUID to DB immediately
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { gradientKbUuid },
+    });
+
+    console.log(`[indexDocsIntoAgent] KB created: ${kbUuid}, waiting for DB provisioning...`);
+
+    // Wait for KB's internal database to be provisioned (~7 min)
+    if (datasourceUuids.length > 0) {
+      await waitForKbReady(kbUuid, datasourceUuids);
+    }
+
+    // Record the first doc
+    const firstSourceId = datasourceUuids[0] || null;
+    await upsertAgentDocument(agentId, firstDoc.id, firstSourceId);
+
+    // Add remaining docs' datasources to the now-ready KB
+    const remainingDocs = docs.filter((_, i) => i !== firstDocIndex);
+    for (const doc of remainingDocs) {
+      await addDocToKb(agentId, gradientKbUuid, doc);
+    }
+
+    // Wait for all indexing to complete before recreating agent
+    await waitForKbIndexingComplete(kbUuid);
+
+    // Recreate the DO agent with KB attached
+    const { agentUuid: newAgentUuid, workspaceUuid: newWorkspaceUuid } =
+      await recreateDoAgentWithKb(agent, gradientKbUuid);
+
+    // Update DB with new agent identity
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        agentUuid: newAgentUuid,
+        workspaceUuid: newWorkspaceUuid,
+        agentEndpoint: "",
+        agentAccessKey: "",
+        status: "provisioning",
+      },
+    });
+
+    console.log(`[indexDocsIntoAgent] Agent recreated with KB: ${newAgentUuid}`);
+    return;
+  }
+
+  // KB already exists — just add datasources (this works without agent recreation)
+  // But we still need to wait for KB to be ready before adding datasources
+  for (const doc of docs) {
+    await addDocToKb(agentId, gradientKbUuid, doc);
+  }
+}
+
+/**
+ * Wait for a KB's internal database to be provisioned by polling triggerIndexing.
+ * DO returns "failed to get db creds" while the DB is still being set up.
+ */
+async function waitForKbReady(
+  kbUuid: string,
+  datasourceUuids: string[],
+  maxAttempts = 120,
+  intervalMs = 5000,
+): Promise<void> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      await triggerIndexing(kbUuid, datasourceUuids);
+      console.log(`[waitForKbReady] KB ${kbUuid} is ready after ${i * intervalMs / 1000}s`);
+      return;
+    } catch {
+      // triggerIndexing logs errors internally; we just retry
+    }
+
+    // Also check via GET if indexing has started
+    const doToken = getDoToken();
+    const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
+      headers: { Authorization: `Bearer ${doToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.knowledge_base?.last_indexing_job) {
+        console.log(`[waitForKbReady] KB ${kbUuid} has indexing job, ready!`);
+        return;
+      }
+    }
+
+    if (i % 12 === 0) {
+      console.log(`[waitForKbReady] Waiting for KB DB... attempt=${i + 1}/${maxAttempts}`);
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  console.warn(`[waitForKbReady] KB ${kbUuid} did not become ready within ${maxAttempts * intervalMs / 1000}s — proceeding anyway`);
+}
+
+/**
+ * Wait for all indexing jobs on a KB to complete.
+ */
+async function waitForKbIndexingComplete(
+  kbUuid: string,
+  maxAttempts = 60,
+  intervalMs = 5000,
+): Promise<void> {
+  const doToken = getDoToken();
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
+      headers: { Authorization: `Bearer ${doToken}` },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const job = data.knowledge_base?.last_indexing_job;
+      if (job) {
+        const phase = job.phase as string;
+        if (phase.includes("SUCCEEDED") || phase.includes("FAILED") || phase.includes("COMPLETED")) {
+          console.log(`[waitForKbIndexingComplete] KB ${kbUuid} indexing finished: ${phase}`);
+          return;
+        }
+      }
+    }
+
+    if (i % 6 === 0) {
+      console.log(`[waitForKbIndexingComplete] Waiting for indexing... attempt=${i + 1}/${maxAttempts}`);
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+
+  console.warn(`[waitForKbIndexingComplete] KB ${kbUuid} indexing did not complete within ${maxAttempts * intervalMs / 1000}s — proceeding anyway`);
+}
+
+/**
+ * Add a single document's datasource to an existing KB and record it.
+ */
+async function addDocToKb(
+  agentId: string,
+  kbUuid: string,
+  doc: { id: string; sourceType: string; sourceUrl: string | null; spacesKey: string | null },
+): Promise<void> {
+  try {
+    let sourceId: string | null = null;
+
+    if (doc.sourceType === "website" && doc.sourceUrl) {
+      sourceId = await addWebCrawlerToKb(kbUuid, doc.sourceUrl);
+    } else if (doc.spacesKey) {
+      sourceId = await addDataSourceToKb(kbUuid, doc.spacesKey);
+    }
+
+    if (sourceId) {
+      await triggerIndexing(kbUuid, [sourceId]);
+    }
+
+    await upsertAgentDocument(agentId, doc.id, sourceId);
+  } catch (err) {
+    console.error(`[addDocToKb] Failed for doc ${doc.id}:`, err);
+    await upsertAgentDocument(agentId, doc.id, null, "failed");
+  }
+}
+
+async function upsertAgentDocument(
+  agentId: string,
+  docId: string,
+  sourceId: string | null,
+  forceStatus?: string,
+): Promise<void> {
+  const status = forceStatus || (sourceId ? "indexed" : "failed");
+  await prisma.agentDocument.upsert({
+    where: {
+      agentId_knowledgeDocumentId: {
+        agentId,
+        knowledgeDocumentId: docId,
+      },
+    },
+    update: { gradientSourceId: sourceId, status },
+    create: {
+      agentId,
+      knowledgeDocumentId: docId,
+      gradientSourceId: sourceId,
+      status,
+    },
+  });
+}
+
+/**
+ * Delete the existing DO agent and recreate it with a KB attached.
+ * Returns the new agent UUID and workspace UUID.
+ */
+async function recreateDoAgentWithKb(
+  agent: { agentUuid: string; workspaceUuid: string; name: string; instruction: string | null },
+  kbUuid: string,
+): Promise<{ agentUuid: string; workspaceUuid: string }> {
+  const doToken = getDoToken();
+  const modelUuid = process.env.DO_AGENT_MODEL_UUID;
+  if (!modelUuid) throw new Error("DO_AGENT_MODEL_UUID not configured");
+
+  const safeName = agent.name.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").toLowerCase();
+
+  // Delete old agent (best-effort)
+  await fetch(`${DO_API_BASE}/agents/${agent.agentUuid}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${doToken}` },
+  }).catch(() => {});
+
+  // Delete old workspace (best-effort)
+  if (agent.workspaceUuid) {
+    await fetch(`${DO_API_BASE}/workspaces/${agent.workspaceUuid}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${doToken}` },
+    }).catch(() => {});
+  }
+
+  // Create new agent with KB attached
+  const agentRes = await fetch(`${DO_API_BASE}/agents`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${doToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: safeName,
+      model_uuid: modelUuid,
+      instruction: agent.instruction || SUPPORT_AGENT_PROMPT,
+      description: `Dochat agent: ${agent.name}`,
+      region: process.env.DO_AGENT_REGION || "tor1",
+      project_id: process.env.DO_PROJECT_ID,
+      knowledge_base_uuid: [kbUuid],
+    }),
+  });
+
+  if (!agentRes.ok) {
+    const text = await agentRes.text();
+    throw new Error(`Failed to recreate agent with KB: ${agentRes.status} ${text}`);
+  }
+
+  const agentData = await agentRes.json();
+  const newAgentUuid = agentData.agent?.uuid;
+  if (!newAgentUuid) throw new Error("No UUID returned from agent recreation");
+
+  // Create new workspace
+  let workspaceUuid = "";
+  try {
+    const wsRes = await fetch(`${DO_API_BASE}/workspaces`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${doToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: `${safeName}-workspace`,
+        description: `Workspace for ${agent.name}`,
+        agent_uuids: [newAgentUuid],
+      }),
+    });
+    if (wsRes.ok) {
+      const wsData = await wsRes.json();
+      workspaceUuid = wsData.workspace?.uuid || "";
+    }
+  } catch {
+    console.warn("[recreateDoAgentWithKb] Workspace creation failed");
+  }
+
+  console.log(`[recreateDoAgentWithKb] Recreated agent ${newAgentUuid} with KB ${kbUuid}`);
+  return { agentUuid: newAgentUuid, workspaceUuid };
+}
+
+/**
+ * Non-blocking check: if the DO agent is deployed, finalize it (set endpoint, access key, status=active).
+ * Called from the GET endpoint during UI polling so the status transitions automatically.
+ * Returns true if the agent was finalized.
+ */
+export async function tryFinalizeAgent(agentId: string): Promise<boolean> {
+  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+  if (!agent || agent.status !== "provisioning") return false;
+
+  const doToken = getDoToken();
+
+  try {
+    const res = await fetch(`${DO_API_BASE}/agents/${agent.agentUuid}`, {
+      headers: { Authorization: `Bearer ${doToken}` },
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    const deploymentUrl = data.agent?.deployment?.url;
+    if (!deploymentUrl) return false;
+
+    // Agent is deployed — create access key and activate
+    const accessKey = await createAgentAccessKey(agent.agentUuid, doToken);
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: {
+        agentEndpoint: deploymentUrl,
+        agentAccessKey: accessKey,
+        status: "active",
+      },
+    });
+
+    console.log(`[tryFinalizeAgent] Agent ${agentId} finalized: ${deploymentUrl}`);
+    return true;
+  } catch (err) {
+    console.error("[tryFinalizeAgent] Error:", err);
+    return false;
   }
 }
 
@@ -279,13 +568,14 @@ async function createAgentAccessKey(
   }
 
   const data = await res.json();
-  const key = data.api_key?.key;
-  if (!key) throw new Error("No access key returned");
+  const key = data.api_key_info?.secret_key || data.api_key?.api_key || data.api_key?.key;
+  if (!key) throw new Error(`No access key returned. Response: ${JSON.stringify(data)}`);
   return key;
 }
 
 /**
- * Delete an agent from DO (agent + workspace + KB).
+ * Update an agent on DO (uses PUT with full body since PATCH returns 405).
+ * Fetches current agent state, merges updates, then PUTs back.
  */
 export async function updateDoAgent(
   agentUuid: string,
@@ -293,13 +583,49 @@ export async function updateDoAgent(
 ) {
   const doToken = getDoToken();
 
+  // GET current agent state
+  const getRes = await fetch(`${DO_API_BASE}/agents/${agentUuid}`, {
+    headers: { Authorization: `Bearer ${doToken}` },
+  });
+
+  if (!getRes.ok) {
+    const text = await getRes.text();
+    throw new Error(`Failed to fetch DO agent for update: ${getRes.status} ${text}`);
+  }
+
+  const getData = await getRes.json();
+  const current = getData.agent;
+  if (!current) throw new Error("No agent data returned from DO");
+
+  // Build full PUT body with merged updates
+  const safeName = (updates.name || current.name || "")
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+
+  const putBody: Record<string, unknown> = {
+    name: safeName,
+    model_uuid: current.model?.uuid || process.env.DO_AGENT_MODEL_UUID,
+    instruction: updates.instruction ?? current.instruction,
+    description: current.description,
+    region: current.region || process.env.DO_AGENT_REGION || "tor1",
+    project_id: current.project_id || process.env.DO_PROJECT_ID,
+  };
+
+  // Preserve existing KB attachment
+  if (current.knowledge_bases?.length > 0) {
+    putBody.knowledge_base_uuid = current.knowledge_bases.map(
+      (kb: { uuid: string }) => kb.uuid,
+    );
+  }
+
   const res = await fetch(`${DO_API_BASE}/agents/${agentUuid}`, {
-    method: "PATCH",
+    method: "PUT",
     headers: {
       Authorization: `Bearer ${doToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(updates),
+    body: JSON.stringify(putBody),
   });
 
   if (!res.ok) {
@@ -313,26 +639,36 @@ export async function updateDoAgent(
 export async function deleteDoAgent(agent: {
   agentUuid: string;
   workspaceUuid: string;
-  gradientKbUuid: string;
+  gradientKbUuid: string | null;
 }) {
   const doToken = getDoToken();
 
-  // Delete agent
-  await fetch(`${DO_API_BASE}/agents/${agent.agentUuid}`, {
+  // Delete agent first
+  const agentRes = await fetch(`${DO_API_BASE}/agents/${agent.agentUuid}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${doToken}` },
-  }).catch(() => {});
+  }).catch((err) => { console.error("[deleteDoAgent] Agent delete network error:", err); return null; });
+  if (agentRes && !agentRes.ok) {
+    const text = await agentRes.text();
+    console.error(`[deleteDoAgent] Agent delete failed: ${agentRes.status} ${text}`);
+  }
 
-  // Delete workspace
+  // Then delete workspace
   if (agent.workspaceUuid) {
-    await fetch(`${DO_API_BASE}/workspaces/${agent.workspaceUuid}`, {
+    const wsRes = await fetch(`${DO_API_BASE}/workspaces/${agent.workspaceUuid}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${doToken}` },
-    }).catch(() => {});
+    }).catch((err) => { console.error("[deleteDoAgent] Workspace delete network error:", err); return null; });
+    if (wsRes && !wsRes.ok) {
+      const text = await wsRes.text();
+      console.error(`[deleteDoAgent] Workspace delete failed: ${wsRes.status} ${text}`);
+    }
   }
 
   // Delete KB
-  await deleteKnowledgeBase(agent.gradientKbUuid);
+  if (agent.gradientKbUuid) {
+    await deleteKnowledgeBase(agent.gradientKbUuid);
+  }
 }
 
 // ─── Chat with agent ────────────────────────────────────
@@ -432,6 +768,7 @@ export async function generateAgentResponse(
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage },
   ];
+
 
   const responseContent = await callDoAgent(
     agent.agentEndpoint,

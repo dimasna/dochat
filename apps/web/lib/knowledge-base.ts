@@ -6,11 +6,33 @@ function getDoToken() {
   return token;
 }
 
+export interface KbDatasource {
+  spaces_data_source?: {
+    bucket_name: string;
+    item_path: string;
+    region: string;
+  };
+  web_crawler_data_source?: {
+    base_url: string;
+    crawling_option: string;
+    embed_media: boolean;
+  };
+}
+
+export interface CreateKbResult {
+  kbUuid: string;
+  datasourceUuids: string[];
+}
+
 /**
  * Create a new knowledge base in DigitalOcean GenAI.
- * Returns the KB UUID. Does NOT save to DB — that's the Agent model's job.
+ * Requires at least one datasource (DO API rejects empty KBs).
+ * Returns the KB UUID and datasource UUIDs.
  */
-export async function createKnowledgeBase(name: string): Promise<string> {
+export async function createKnowledgeBase(
+  name: string,
+  datasources: KbDatasource[],
+): Promise<CreateKbResult> {
   const doToken = getDoToken();
   const embeddingModel = process.env.DO_EMBEDDING_MODEL_UUID;
   if (!embeddingModel) throw new Error("DO_EMBEDDING_MODEL_UUID not configured");
@@ -26,6 +48,7 @@ export async function createKnowledgeBase(name: string): Promise<string> {
       embedding_model_uuid: embeddingModel,
       region: process.env.DO_AGENT_REGION || "tor1",
       project_id: process.env.DO_PROJECT_ID,
+      datasources,
     }),
   });
 
@@ -35,9 +58,43 @@ export async function createKnowledgeBase(name: string): Promise<string> {
   }
 
   const data = await res.json();
-  const uuid = data.knowledge_base?.uuid;
-  if (!uuid) throw new Error("No UUID returned from KB creation");
-  return uuid;
+  const kbUuid = data.knowledge_base?.uuid;
+  if (!kbUuid) throw new Error("No UUID returned from KB creation");
+
+  const datasourceUuids = (data.knowledge_base?.data_sources || [])
+    .map((ds: Record<string, unknown>) => ds.uuid as string)
+    .filter(Boolean);
+
+  return { kbUuid, datasourceUuids };
+}
+
+/**
+ * Build a KbDatasource object from a document's properties.
+ */
+export function buildDatasource(doc: {
+  sourceType: string;
+  sourceUrl: string | null;
+  spacesKey: string | null;
+}): KbDatasource | null {
+  if (doc.sourceType === "website" && doc.sourceUrl) {
+    return {
+      web_crawler_data_source: {
+        base_url: doc.sourceUrl,
+        crawling_option: "SCOPED",
+        embed_media: true,
+      },
+    };
+  }
+  if (doc.spacesKey) {
+    return {
+      spaces_data_source: {
+        bucket_name: process.env.DO_SPACES_BUCKET!,
+        item_path: `/${doc.spacesKey}`,
+        region: process.env.DO_SPACES_REGION || "sgp1",
+      },
+    };
+  }
+  return null;
 }
 
 /**
@@ -138,7 +195,7 @@ export async function triggerIndexing(
 
   if (!res.ok) {
     const text = await res.text();
-    console.error(`[triggerIndexing] Failed: ${res.status} ${text}`);
+    throw new Error(`[triggerIndexing] Failed: ${res.status} ${text}`);
   }
 }
 
@@ -166,8 +223,12 @@ export async function removeDataSourceFromKb(
 export async function deleteKnowledgeBase(kbUuid: string): Promise<void> {
   const doToken = getDoToken();
 
-  await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
+  const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${doToken}` },
-  }).catch(() => {}); // Best effort
+  }).catch((err) => { console.error("[deleteKnowledgeBase] Network error:", err); return null; });
+  if (res && !res.ok) {
+    const text = await res.text();
+    console.error(`[deleteKnowledgeBase] Failed: ${res.status} ${text}`);
+  }
 }

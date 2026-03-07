@@ -20,7 +20,7 @@ const STEPS = [
   { label: "Widget Settings", description: "Configure your chat widget" },
   { label: "Knowledge Base", description: "Add knowledge sources" },
   { label: "Integration", description: "Add to your website" },
-  { label: "Test & Launch", description: "Test and provision your agent" },
+  { label: "Review & Launch", description: "Review and provision your agent" },
 ];
 
 export const OnboardingView = () => {

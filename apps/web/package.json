@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "postinstall": "mkdir -p node_modules/.prisma && ln -sf $(realpath ../../node_modules/.prisma/client) node_modules/.prisma/client 2>/dev/null || true",
     "dev": "dotenv -e ../../.env -- next dev --port 3005",
     "build": "dotenv -e ../../.env -- next build",
     "start": "dotenv -e ../../.env -- next start",

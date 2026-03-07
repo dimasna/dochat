@@ -43,7 +43,7 @@ model Agent {
   agentEndpoint   String   // Deployment URL (e.g., https://xxx.agents.do-ai.run)
   agentAccessKey  String   // Access key for the agent endpoint
   workspaceUuid   String   // DO workspace UUID
-  gradientKbUuid  String   // Each agent owns its own KB
+  gradientKbUuid  String?  // Each agent owns its own KB (created when first doc attached)
   name            String
   description     String?
   instruction     String?  @db.Text // Custom system prompt per agent
@@ -110,7 +110,7 @@ model Conversation {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  agent          Agent          @relation(fields: [agentId], references: [id])
+  agent          Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   contactSession ContactSession @relation(fields: [contactSessionId], references: [id], onDelete: Cascade)
   messages       Message[]
 

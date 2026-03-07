@@ -83,6 +83,11 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
       if (!res.ok) throw new Error("Failed to fetch agent");
       return res.json();
     },
+    // Poll every 5s while agent is provisioning
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "provisioning" ? 5000 : false;
+    },
   });
 
   // Fetch org-level documents for attaching
@@ -94,6 +99,8 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
       return res.json();
     },
   });
+
+  const isProvisioning = agent?.status === "provisioning";
 
   const handleDelete = async () => {
     if (!confirm("Delete this agent? This will remove the agent, its workspace, and knowledge base from DigitalOcean.")) {
@@ -241,6 +248,9 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
                       variant={agent.status === "active" ? "default" : "secondary"}
                       className="capitalize"
                     >
+                      {agent.status === "provisioning" && (
+                        <Loader2Icon className="size-3 mr-1 animate-spin" />
+                      )}
                       {agent.status}
                     </Badge>
                   </div>
@@ -264,11 +274,23 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
             </div>
           </div>
 
+          {/* Provisioning banner */}
+          {isProvisioning && (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950 px-4 py-3 mb-6">
+              <div className="flex items-center gap-2">
+                <Loader2Icon className="size-4 animate-spin text-yellow-600 dark:text-yellow-400" />
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  Agent is being provisioned on DigitalOcean. Document management will be available once the agent is active.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Agent Settings */}
           <div className="rounded-lg border bg-background p-5 mb-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold">Agent Settings</h2>
-              {!isEditing && (
+              {!isEditing && !isProvisioning && (
                 <Button size="sm" variant="outline" onClick={handleStartEdit}>
                   <PenIcon className="size-3.5 mr-1" />
                   Edit
@@ -356,7 +378,11 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
           <div className="rounded-lg border bg-background p-5 mb-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold">Knowledge Base Documents</h2>
-              <Button size="sm" onClick={() => setUploadOpen(true)}>
+              <Button
+                size="sm"
+                onClick={() => setUploadOpen(true)}
+                disabled={isProvisioning}
+              >
                 <PlusIcon className="size-4 mr-1" />
                 Upload New
               </Button>
@@ -379,6 +405,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
                       size="icon"
                       className="size-8"
                       onClick={() => handleDetachDoc(agentDoc.document.id)}
+                      disabled={isProvisioning}
                     >
                       <TrashIcon className="size-3.5 text-muted-foreground" />
                     </Button>
@@ -389,12 +416,12 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
 
             {agent.documents.length === 0 && (
               <p className="text-muted-foreground text-sm mb-4">
-                No documents attached. Upload or attach documents below.
+                No documents attached.{!isProvisioning && " Upload or attach documents below."}
               </p>
             )}
 
             {/* Available org docs to attach */}
-            {unattachedDocs.length > 0 && (
+            {!isProvisioning && unattachedDocs.length > 0 && (
               <div>
                 <p className="text-sm text-muted-foreground mb-2">
                   Available documents ({unattachedDocs.length}):

@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
 
     let assistantMessage = null;
 
+    console.log("[embed/chat] subscription:", subscription?.status, "conversation:", conversation.status, "agentId:", conversation.agentId);
+
     if (
       conversation.status === "unresolved" &&
       subscription?.status === "active"
@@ -85,7 +87,8 @@ export async function POST(req: NextRequest) {
               : undefined,
           },
         });
-      } catch {
+      } catch (err) {
+        console.error("[embed/chat] generateAgentResponse failed:", err);
         assistantMessage = await prisma.message.create({
           data: {
             conversationId,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { deleteDoAgent, updateDoAgent } from "@/lib/agent";
+import { deleteDoAgent, updateDoAgent, tryFinalizeAgent } from "@/lib/agent";
 
 export async function GET(
   _req: NextRequest,
@@ -15,7 +15,7 @@ export async function GET(
 
     const { id } = await params;
 
-    const agent = await prisma.agent.findUnique({
+    let agent = await prisma.agent.findUnique({
       where: { id },
       include: {
         widgetSettings: true,
@@ -28,6 +28,23 @@ export async function GET(
 
     if (!agent || agent.orgId !== orgId) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    }
+
+    // Auto-finalize: if provisioning, check if DO agent is deployed and activate it
+    if (agent.status === "provisioning") {
+      const finalized = await tryFinalizeAgent(agent.id);
+      if (finalized) {
+        agent = await prisma.agent.findUnique({
+          where: { id },
+          include: {
+            widgetSettings: true,
+            documents: {
+              include: { document: true },
+            },
+            _count: { select: { conversations: true } },
+          },
+        }) as typeof agent;
+      }
     }
 
     return NextResponse.json(agent);
@@ -57,13 +74,20 @@ export async function PATCH(
     const body = await req.json();
     const { name, description, instruction } = body;
 
-    // Sync name/instruction to DO agent
-    const doUpdates: { name?: string; instruction?: string } = {};
-    if (name !== undefined) doUpdates.name = name;
-    if (instruction !== undefined) doUpdates.instruction = instruction;
+    // Sync name/instruction to DO agent (skip if still provisioning — agent may not be deployed yet)
+    if (agent.status === "active" && agent.agentUuid) {
+      const doUpdates: { name?: string; instruction?: string } = {};
+      if (name !== undefined) doUpdates.name = name;
+      if (instruction !== undefined) doUpdates.instruction = instruction;
 
-    if (Object.keys(doUpdates).length > 0 && agent.agentUuid) {
-      await updateDoAgent(agent.agentUuid, doUpdates);
+      if (Object.keys(doUpdates).length > 0) {
+        try {
+          await updateDoAgent(agent.agentUuid, doUpdates);
+        } catch (err) {
+          console.error("[PATCH agent] DO update failed:", err);
+          // Continue — still update DB
+        }
+      }
     }
 
     const updated = await prisma.agent.update({

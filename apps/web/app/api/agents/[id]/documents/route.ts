@@ -51,6 +51,10 @@ export async function POST(
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
+    if (agent.status === "provisioning") {
+      return NextResponse.json({ error: "Agent is still provisioning" }, { status: 400 });
+    }
+
     const body = await req.json();
     const { documentIds } = body;
 
@@ -67,8 +71,8 @@ export async function POST(
       return NextResponse.json({ error: "Some documents not found" }, { status: 400 });
     }
 
-    // Index docs into agent's KB (fire-and-forget)
-    indexDocsIntoAgent(agent.id, agent.gradientKbUuid, documentIds).catch((err) =>
+    // Index docs into agent's KB (fire-and-forget, creates KB on-demand)
+    indexDocsIntoAgent(agent.id, documentIds).catch((err) =>
       console.error("[agent-docs] Failed to index:", err),
     );
 
@@ -117,7 +121,7 @@ export async function DELETE(
     }
 
     // Remove from DO KB
-    if (agentDoc.gradientSourceId) {
+    if (agentDoc.gradientSourceId && agent.gradientKbUuid) {
       await removeDataSourceFromKb(agent.gradientKbUuid, agentDoc.gradientSourceId);
     }
 
