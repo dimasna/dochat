@@ -62,6 +62,9 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
+      dodopayments:
+        specifier: ^2.23.2
+        version: 2.23.2
       jotai:
         specifier: ^2.12.5
         version: 2.12.5(@types/react@19.0.10)(react@19.0.0)
@@ -623,6 +626,7 @@ packages:
   '@clerk/clerk-react@5.37.0':
     resolution: {integrity: sha512-jJ7xSE8aqTmxzdAsz7UeBEIXXTTwpWJjMhxcuTDc8iTgR7RVKqmTtx910da+F0ewGE26RrgdR3PfTCF+0Fgj1A==}
     engines: {node: '>=18.17.0'}
+    deprecated: 'This package is no longer supported. Please use @clerk/react instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
     peerDependencies:
       react: ^18.0.0 || ^19.0.0 || ^19.0.0-0
       react-dom: ^18.0.0 || ^19.0.0 || ^19.0.0-0
@@ -650,6 +654,7 @@ packages:
   '@clerk/types@4.71.0':
     resolution: {integrity: sha512-QsZEIzx9AFTXAjcGc+aQ+k0TjzXTqi2EpScl36w187xhO3+CWXuk/tZai8IdVclp091+KmQKd8ayxuKnhg3QYQ==}
     engines: {node: '>=18.17.0'}
+    deprecated: 'This package is no longer supported. Please import types from @clerk/shared/types instead. See the upgrade guide for more info: https://clerk.com/docs/guides/development/upgrading/upgrade-guides/core-3'
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -2926,6 +2931,10 @@ packages:
   doctrine@2.1.0:
     resolution: {integrity: sha512-35mSku4ZXK0vfCuHEDAwt55dg2jNajHZ1odvF+8SSr82EsZY4QmXfuWso8oEd8zRhVObSN18aM0CjSdoBX7zIw==}
     engines: {node: '>=0.10.0'}
+
+  dodopayments@2.23.2:
+    resolution: {integrity: sha512-KekzwNChglkSWqyiQKg2nAl8Y6KJe9z94CmHVuqkzcl+PsjSqxDql5QuHxd+ni6FAUz+1qDpstPk0Jb4MBT/Mg==}
+    hasBin: true
 
   dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
@@ -7720,6 +7729,10 @@ snapshots:
   doctrine@2.1.0:
     dependencies:
       esutils: 2.0.3
+
+  dodopayments@2.23.2:
+    dependencies:
+      standardwebhooks: 1.0.0
 
   dom-helpers@5.2.1:
     dependencies:

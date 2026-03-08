@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { LimitError } from "./limits";
 
 export class AuthError extends Error {
   status: number;
@@ -32,5 +33,6 @@ export async function getAuthUser(orgId?: string) {
  */
 export function getErrorStatus(error: unknown): number {
   if (error instanceof AuthError) return error.status;
+  if (error instanceof LimitError) return error.status;
   return 500;
 }

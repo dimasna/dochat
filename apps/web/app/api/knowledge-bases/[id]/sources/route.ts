@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { uploadFileToDo, addSourceToKb } from "@/lib/knowledge-base";
+import { checkSourceLimit } from "@/lib/limits";
 
 export async function POST(
   req: NextRequest,
@@ -18,6 +19,8 @@ export async function POST(
     if (!kb || kb.orgId !== orgId) {
       return NextResponse.json({ error: "Knowledge base not found" }, { status: 404 });
     }
+
+    await checkSourceLimit(orgId, kbId);
 
     const formData = await req.formData();
     const sourceType = (formData.get("sourceType") as string) || "file";

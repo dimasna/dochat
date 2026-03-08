@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { generateAgentResponse } from "@/lib/agent";
 import { eventBus } from "@/lib/event-bus";
+import { checkMessageCreditLimit, LimitError } from "@/lib/limits";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -79,12 +80,12 @@ export async function POST(req: NextRequest) {
 
     let assistantMessage = null;
 
-    console.log("[embed/chat] subscription:", subscription?.status, "conversation:", conversation.status, "agentId:", conversation.agentId);
-
     if (
       conversation.status === "unresolved" &&
       subscription?.status === "active"
     ) {
+      // Check message credit limit before generating AI response
+      await checkMessageCreditLimit(conversation.orgId);
       try {
         const agentResponse = await generateAgentResponse(
           conversationId,
@@ -137,9 +138,10 @@ export async function POST(req: NextRequest) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
+    const status = error instanceof LimitError ? error.status : 500;
     return NextResponse.json(
       { error: message },
-      { status: 500, headers: corsHeaders },
+      { status, headers: corsHeaders },
     );
   }
 }

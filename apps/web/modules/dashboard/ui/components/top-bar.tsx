@@ -41,7 +41,7 @@ export const TopBar = () => {
           href="/workspace"
           className="flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium hover:bg-accent transition-colors"
         >
-          Dochat
+          My Workspace
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
             Free
           </span>

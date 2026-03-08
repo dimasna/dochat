@@ -10,14 +10,18 @@ datasource db {
 // ─── Subscription ─────────────────────────────────────────
 
 model Subscription {
-  id                   String   @id @default(cuid())
-  orgId                String   @unique // Clerk organization ID
-  status               String   @default("active") // active, inactive, cancelled
-  plan                 String   @default("free")   // free, pro, enterprise
-  onboardingComplete   Boolean  @default(false)
-  openSearchDatabaseId String?  // Shared OpenSearch DB ID for org's KBs
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  orgId                String    @unique // Clerk organization ID
+  status               String    @default("active") // active, inactive, cancelled
+  plan                 String    @default("free")   // free, pro, enterprise
+  onboardingComplete   Boolean   @default(false)
+  openSearchDatabaseId String?   // Shared OpenSearch DB ID for org's KBs
+  dodoCustomerId       String?   // DodoPayments customer ID
+  dodoSubscriptionId   String?   // DodoPayments subscription ID
+  currentPeriodStart   DateTime? // Billing period start
+  currentPeriodEnd     DateTime? // Billing period end
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 // ─── Agent (per-org, multiple per org — DigitalOcean GenAI) ──

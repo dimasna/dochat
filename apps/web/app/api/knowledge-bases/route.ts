@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { reconcileStaleKbStatuses } from "@/lib/knowledge-base";
+import { checkKbLimit } from "@/lib/limits";
 
 export async function GET(req: NextRequest) {
   try {
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
+
+    await checkKbLimit(orgId);
 
     const body = await req.json();
     const { name } = body;

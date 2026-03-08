@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { provisionAgent, tryFinalizeAgent } from "@/lib/agent";
+import { checkAgentLimit } from "@/lib/limits";
 
 export async function GET() {
   try {
@@ -41,6 +42,8 @@ export async function POST(req: NextRequest) {
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
+
+    await checkAgentLimit(orgId);
 
     const body = await req.json();
     const { name, description, instruction, knowledgeBaseIds } = body;
