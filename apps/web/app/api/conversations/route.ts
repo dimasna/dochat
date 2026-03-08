@@ -28,8 +28,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
 
-    const where: Record<string, unknown> = { orgId };
+    const agentId = req.nextUrl.searchParams.get("agentId");
+    const where: Record<string, unknown> = {
+      orgId,
+      contactSession: {
+        NOT: { metadata: { path: ["isPlayground"], equals: true } },
+      },
+    };
     if (status) where.status = status;
+    if (agentId) where.agentId = agentId;
 
     const conversations = await prisma.conversation.findMany({
       where,

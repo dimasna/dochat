@@ -18,8 +18,6 @@ export interface WidgetConfig {
   suggestion1?: string | null;
   suggestion2?: string | null;
   suggestion3?: string | null;
-  vapiAssistantId?: string | null;
-  vapiPhoneNumber?: string | null;
 }
 
 export interface AgentToolCall {

@@ -1,14 +1,17 @@
 "use client";
 
+import { useActiveAgent } from "@/hooks/use-active-agent";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2Icon } from "lucide-react";
 import { CustomizationForm } from "../components/customization-form";
 
 export const CustomizationView = () => {
-  const { data: widgetSettings, isLoading: isLoadingSettings } = useQuery({
-    queryKey: ["widget-settings"],
+  const { activeAgentId } = useActiveAgent();
+
+  const { data: widgetSettings, isLoading } = useQuery({
+    queryKey: ["widget-settings", activeAgentId],
     queryFn: async () => {
-      const res = await fetch("/api/widget-settings");
+      const res = await fetch(`/api/widget-settings?agentId=${activeAgentId}`);
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json() as Promise<{
         agentId: string;
@@ -16,26 +19,12 @@ export const CustomizationView = () => {
         suggestion1?: string | null;
         suggestion2?: string | null;
         suggestion3?: string | null;
-        vapiAssistantId?: string | null;
-        vapiPhoneNumber?: string | null;
+        themeColor?: string | null;
+        widgetLogo?: string | null;
       }>;
     },
+    enabled: !!activeAgentId,
   });
-
-  const { data: plugins, isLoading: isLoadingPlugins } = useQuery({
-    queryKey: ["plugins"],
-    queryFn: async () => {
-      const res = await fetch("/api/plugins");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
-  });
-
-  const isLoading = isLoadingSettings || isLoadingPlugins;
-  const hasVapiPlugin = plugins?.some(
-    (p: { service: string; enabled: boolean }) =>
-      p.service === "vapi" && p.enabled,
-  );
 
   if (isLoading) {
     return (
@@ -58,9 +47,8 @@ export const CustomizationView = () => {
 
         <div className="mt-8">
           <CustomizationForm
-            agentId={widgetSettings?.agentId}
+            agentId={activeAgentId ?? widgetSettings?.agentId}
             initialData={widgetSettings}
-            hasVapiPlugin={!!hasVapiPlugin}
           />
         </div>
       </div>

@@ -99,6 +99,7 @@ function getTotalSize(sources: KnowledgeSource[]) {
 
 export const FilesView = () => {
   const queryClient = useQueryClient();
+
   const { data: knowledgeBases = [], isLoading } = useQuery<KnowledgeBase[]>({
     queryKey: ["knowledge-bases"],
     queryFn: async () => {
@@ -190,6 +191,7 @@ export const FilesView = () => {
       });
       if (!res.ok) throw new Error("Failed to create");
       const newKb = await res.json();
+
       queryClient.invalidateQueries({ queryKey: ["knowledge-bases"] });
       setCreateDialogOpen(false);
       setCreateName("");

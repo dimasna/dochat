@@ -20,21 +20,6 @@ model Subscription {
   updatedAt            DateTime @updatedAt
 }
 
-// ─── Plugins ──────────────────────────────────────────────
-
-model Plugin {
-  id        String  @id @default(cuid())
-  orgId     String  // Clerk organization ID
-  service   String  // "vapi"
-  config    Json    @default("{}")
-  enabled   Boolean @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([orgId, service])
-  @@index([orgId])
-}
-
 // ─── Agent (per-org, multiple per org — DigitalOcean GenAI) ──
 
 model Agent {
@@ -68,9 +53,8 @@ model WidgetSettings {
   suggestion1     String?
   suggestion2     String?
   suggestion3     String?
-  // Vapi voice settings
-  vapiAssistantId String?
-  vapiPhoneNumber String?
+  themeColor      String?  // Hex color for widget theme (e.g. "#3b82f6")
+  widgetLogo      String?  // Base64 data URL for custom widget logo
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

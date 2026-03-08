@@ -8,8 +8,6 @@ import { WidgetLoadingScreen } from "@/modules/widget/ui/screens/widget-loading-
 import { WidgetSelectionScreen } from "@/modules/widget/ui/screens/widget-selection-screen";
 import { WidgetChatScreen } from "@/modules/widget/ui/screens/widget-chat-screen";
 import { WidgetInboxScreen } from "../screens/widget-inbox-screen";
-import { WidgetVoiceScreen } from "../screens/widget-voice-screen";
-import { WidgetContactScreen } from "../screens/widget-contact-screen";
 
 interface Props {
   organizationId: string | null;
@@ -23,11 +21,9 @@ export const WidgetView = ({ organizationId, agentId }: Props) => {
     loading: <WidgetLoadingScreen organizationId={organizationId} agentId={agentId} />,
     error: <WidgetErrorScreen />,
     auth: <WidgetAuthScreen />,
-    voice: <WidgetVoiceScreen />,
     inbox: <WidgetInboxScreen />,
     selection: <WidgetSelectionScreen />,
     chat: <WidgetChatScreen />,
-    contact: <WidgetContactScreen />,
   }
 
   return (

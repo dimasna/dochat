@@ -48,12 +48,12 @@ export async function PUT(
     }
 
     const body = await req.json();
-    const { greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber } = body;
+    const { greetMessage, suggestion1, suggestion2, suggestion3 } = body;
 
     const settings = await prisma.widgetSettings.upsert({
       where: { agentId: id },
-      update: { greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber },
-      create: { agentId: id, orgId, greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber },
+      update: { greetMessage, suggestion1, suggestion2, suggestion3 },
+      create: { agentId: id, orgId, greetMessage, suggestion1, suggestion2, suggestion3 },
     });
 
     return NextResponse.json(settings);

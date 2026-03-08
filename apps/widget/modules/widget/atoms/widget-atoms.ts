@@ -8,8 +8,6 @@ export interface WidgetSettingsData {
   suggestion1: string | null;
   suggestion2: string | null;
   suggestion3: string | null;
-  vapiAssistantId: string | null;
-  vapiPhoneNumber: string | null;
 }
 
 export interface ContactSessionData {
@@ -28,7 +26,3 @@ export const loadingMessageAtom = atom<string | null>(null);
 export const conversationIdAtom = atom<string | null>(null);
 
 export const widgetSettingsAtom = atom<WidgetSettingsData | null>(null);
-export const vapiSecretsAtom = atom<{
-  publicApiKey: string;
-} | null>(null);
-export const hasVapiSecretsAtom = atom((get) => get(vapiSecretsAtom) !== null);

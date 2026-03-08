@@ -104,7 +104,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
       const res = await fetch(`/api/agents/${agentId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete agent");
       toast.success("Agent deleted");
-      router.push("/agents");
+      router.push("/workspace");
     } catch {
       toast.error("Failed to delete agent");
     } finally {
@@ -215,7 +215,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
         {/* Header */}
         <div className="mb-6">
           <Link
-            href="/agents"
+            href="/workspace"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
           >
             <ArrowLeftIcon className="size-4" />

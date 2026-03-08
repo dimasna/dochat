@@ -4,8 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack --port 3006",
-    "build": "next build",
+    "build:embed": "esbuild embed/embed.ts --bundle --format=iife --outfile=public/widget.js --minify",
+    "dev": "pnpm build:embed && next dev --turbopack --port 3006",
+    "build": "pnpm build:embed && next build",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
@@ -13,7 +14,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.0",
-    "@vapi-ai/web": "^2.3.8",
     "@workspace/ui": "workspace:*",
     "date-fns": "^4.1.0",
     "jotai": "^2.12.5",
@@ -31,6 +31,7 @@
     "@types/react-dom": "^19",
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
+    "esbuild": "^0.24.0",
     "typescript": "^5.7.3"
   }
 }

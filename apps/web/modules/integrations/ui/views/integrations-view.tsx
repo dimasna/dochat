@@ -1,17 +1,9 @@
 "use client";
 
 import { useOrganization } from "@clerk/nextjs";
-import { useQuery } from "@tanstack/react-query";
+import { useActiveAgent } from "@/hooks/use-active-agent";
 import { Button } from "@workspace/ui/components/button";
-import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
 import { Separator } from "@workspace/ui/components/separator";
 import { CopyIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -27,48 +19,21 @@ import {
 import { useState } from "react";
 import { createScript } from "../../utils";
 
-interface AgentItem {
-  id: string;
-  name: string;
-  status: string;
-}
-
 export const IntegrationsView = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedSnippet, setSelectedSnippet] = useState("");
-  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const { organization } = useOrganization();
-
-  const { data: agents = [] } = useQuery<AgentItem[]>({
-    queryKey: ["agents"],
-    queryFn: async () => {
-      const res = await fetch("/api/agents");
-      if (!res.ok) throw new Error("Failed to fetch agents");
-      return res.json();
-    },
-  });
-
-  // Auto-select first agent
-  const effectiveAgentId = selectedAgentId || agents[0]?.id || "";
+  const { activeAgentId } = useActiveAgent();
 
   const handleIntegrationClick = (integrationId: IntegrationId) => {
     if (!organization) {
-      toast.error("Organization ID not found");
+      toast.error("Organization not found");
       return;
     }
 
-    const snippet = createScript(integrationId, organization.id, effectiveAgentId);
+    const snippet = createScript(integrationId, organization.id, activeAgentId ?? undefined);
     setSelectedSnippet(snippet);
     setDialogOpen(true);
-  };
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(organization?.id ?? "");
-      toast.success("Copied to clipboard");
-    } catch {
-      toast.error("Failed to copy to clipboard");
-    }
   };
 
   return (
@@ -85,49 +50,6 @@ export const IntegrationsView = () => {
             <p className="text-muted-foreground">
               Choose the integration that&apos;s right for you
             </p>
-          </div>
-          <div className="mt-8 space-y-6">
-            <div className="flex items-center gap-4">
-              <Label className="w-34" htmlFor="organization-id">
-                Organization ID
-              </Label>
-              <Input
-                disabled
-                id="organization-id"
-                readOnly
-                value={organization?.id ?? ""}
-                className="flex-1 bg-background font-mono text-sm"
-              />
-              <Button
-                className="gap-2"
-                onClick={handleCopy}
-                size="sm"
-              >
-                <CopyIcon className="size-4" />
-                Copy
-              </Button>
-            </div>
-
-            {agents.length > 0 && (
-              <div className="flex items-center gap-4">
-                <Label className="w-34">Agent</Label>
-                <Select
-                  value={effectiveAgentId}
-                  onValueChange={setSelectedAgentId}
-                >
-                  <SelectTrigger className="flex-1 bg-background">
-                    <SelectValue placeholder="Select an agent" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {agents.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
 
           <Separator className="my-8" />

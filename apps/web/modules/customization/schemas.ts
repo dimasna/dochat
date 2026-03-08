@@ -7,8 +7,6 @@ export const widgetSettingsSchema = z.object({
     suggestion2: z.string().optional(),
     suggestion3: z.string().optional(),
   }),
-  vapiSettings: z.object({
-    assistantId: z.string().optional(),
-    phoneNumber: z.string().optional(),
-  }),
+  themeColor: z.string().optional(),
+  widgetLogo: z.string().optional(),
 });

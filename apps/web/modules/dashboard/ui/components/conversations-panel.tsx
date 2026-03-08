@@ -20,6 +20,7 @@ import { useAtomValue, useSetAtom } from "jotai/react";
 import { statusFilterAtom } from "../../atoms";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
+import { useActiveAgent } from "@/hooks/use-active-agent";
 
 interface ConversationItem {
   id: string;
@@ -47,16 +48,19 @@ export const ConversationsPanel = () => {
 
   const statusFilter = useAtomValue(statusFilterAtom);
   const setStatusFilter = useSetAtom(statusFilterAtom);
+  const { activeAgentId } = useActiveAgent();
 
   const { data: conversations = [], isLoading } = useQuery<ConversationItem[]>({
-    queryKey: ["conversations", statusFilter],
+    queryKey: ["conversations", statusFilter, activeAgentId],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
+      if (activeAgentId) params.set("agentId", activeAgentId);
       const res = await fetch(`/api/conversations?${params}`);
       if (!res.ok) throw new Error("Failed to fetch conversations");
       return res.json();
     },
+    enabled: !!activeAgentId,
     refetchInterval: 5000,
   });
 
@@ -150,11 +154,6 @@ export const ConversationsPanel = () => {
                       <span className="truncate font-bold">
                         {conversation.contactSession.name}
                       </span>
-                      {conversation.agent && (
-                        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                          {conversation.agent.name}
-                        </span>
-                      )}
                       <span className="ml-auto shrink-0 text-muted-foreground text-xs">
                         {formatDistanceToNow(new Date(conversation.createdAt))}
                       </span>

@@ -1,15 +1,21 @@
 "use client";
 
+import { useActiveAgent } from "@/hooks/use-active-agent";
 import { useQuery } from "@tanstack/react-query";
 
 export default function Page() {
+  const { activeAgent, activeAgentId } = useActiveAgent();
+
   const { data: stats } = useQuery({
-    queryKey: ["conversation-stats"],
+    queryKey: ["conversation-stats", activeAgentId],
     queryFn: async () => {
-      const res = await fetch("/api/conversations/stats");
+      const params = new URLSearchParams();
+      if (activeAgentId) params.set("agentId", activeAgentId);
+      const res = await fetch(`/api/conversations/stats?${params}`);
       if (!res.ok) throw new Error("Failed to fetch stats");
       return res.json();
     },
+    enabled: !!activeAgentId,
     refetchInterval: 10000,
   });
 
@@ -19,7 +25,9 @@ export default function Page() {
         <div className="space-y-2">
           <h1 className="text-2xl md:text-4xl">Dashboard</h1>
           <p className="text-muted-foreground">
-            Overview of your customer support activity
+            {activeAgent
+              ? `Overview for ${activeAgent.name}`
+              : "Overview of your customer support activity"}
           </p>
         </div>
 

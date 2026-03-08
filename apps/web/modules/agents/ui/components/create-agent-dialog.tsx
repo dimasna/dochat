@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSetAtom } from "jotai/react";
+import { activeAgentIdAtom } from "@/modules/dashboard/atoms";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
@@ -31,6 +33,7 @@ interface OrgKb {
 
 export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps) => {
   const queryClient = useQueryClient();
+  const setActiveAgentId = useSetAtom(activeAgentIdAtom);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -83,7 +86,9 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
         throw new Error(body.error || "Failed to create agent");
       }
 
+      const newAgent = await res.json();
       toast.success("Agent created! It will be ready shortly.");
+      setActiveAgentId(newAgent.id);
       queryClient.invalidateQueries({ queryKey: ["agents"] });
       setName("");
       setDescription("");

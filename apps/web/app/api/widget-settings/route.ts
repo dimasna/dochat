@@ -38,7 +38,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { agentId, greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber } = body;
+    const { agentId, greetMessage, suggestion1, suggestion2, suggestion3, themeColor, widgetLogo } = body;
 
     if (!agentId) {
       return NextResponse.json({ error: "agentId required" }, { status: 400 });
@@ -52,8 +52,8 @@ export async function PUT(req: NextRequest) {
 
     const settings = await prisma.widgetSettings.upsert({
       where: { agentId },
-      update: { greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber },
-      create: { agentId, orgId, greetMessage, suggestion1, suggestion2, suggestion3, vapiAssistantId, vapiPhoneNumber },
+      update: { greetMessage, suggestion1, suggestion2, suggestion3, themeColor: themeColor || null, widgetLogo: widgetLogo || null },
+      create: { agentId, orgId, greetMessage, suggestion1, suggestion2, suggestion3, themeColor: themeColor || null, widgetLogo: widgetLogo || null },
     });
 
     return NextResponse.json(settings);

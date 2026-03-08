@@ -75,17 +75,3 @@ services:
       - key: NODE_ENV
         value: production
         scope: RUN_AND_BUILD_TIME
-
-static_sites:
-  - name: embed
-    github:
-      repo: dimasna/dochat
-      branch: main
-      deploy_on_push: true
-    source_dir: apps/embed
-    build_command: pnpm install && pnpm --filter embed build
-    output_dir: dist
-    envs:
-      - key: VITE_WIDGET_URL
-        value: ${widget.PUBLIC_URL}
-        scope: BUILD_TIME

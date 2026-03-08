@@ -55,8 +55,8 @@ export async function GET(req: NextRequest) {
       suggestion1: settings.suggestion1,
       suggestion2: settings.suggestion2,
       suggestion3: settings.suggestion3,
-      vapiAssistantId: settings.vapiAssistantId,
-      vapiPhoneNumber: settings.vapiPhoneNumber,
+      themeColor: settings.themeColor,
+      widgetLogo: settings.widgetLogo,
     },
     { headers: corsHeaders },
   );

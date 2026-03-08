@@ -3,15 +3,21 @@ import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { reconcileStaleKbStatuses } from "@/lib/knowledge-base";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const { orgId } = await getAuthUser();
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
 
+    const agentId = req.nextUrl.searchParams.get("agentId");
+    const where: Record<string, unknown> = { orgId };
+    if (agentId) {
+      where.agents = { some: { agentId } };
+    }
+
     const kbs = await prisma.knowledgeBase.findMany({
-      where: { orgId },
+      where,
       include: {
         sources: {
           orderBy: { createdAt: "asc" },
