@@ -1,33 +1,37 @@
 "use client";
 
-import { AISuggestion, AISuggestions } from "@workspace/ui/components/ai/suggestion";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@workspace/ui/components/button";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ArrowLeftIcon, MenuIcon } from "lucide-react";
+import { ClockIcon, MoreHorizontalIcon, SquarePenIcon, UserIcon, XIcon } from "lucide-react";
 import { DicebearAvatar } from "@workspace/ui/components/dicebear-avatar";
-import { contactSessionAtomFamily, conversationIdAtom, organizationIdAtom, screenAtom, widgetSettingsAtom } from "../../atoms/widget-atoms";
+import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, organizationIdAtom, widgetSettingsAtom } from "../../atoms/widget-atoms";
 import { Form, FormField } from "@workspace/ui/components/form";
 import {
   AIConversation,
   AIConversationContent,
 } from "@workspace/ui/components/ai/conversation";
 import {
-  AIInput,
   AIInputSubmit,
   AIInputTextarea,
-  AIInputToolbar,
-  AIInputTools,
 } from "@workspace/ui/components/ai/input";
 import {
   AIMessage,
   AIMessageContent,
 } from "@workspace/ui/components/ai/message";
 import { AIResponse } from "@workspace/ui/components/ai/response";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
+import { ConversationStatusIcon } from "@workspace/ui/components/conversation-status-icon";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 
 interface MessageData {
@@ -37,27 +41,74 @@ interface MessageData {
   createdAt: string;
 }
 
+interface ConversationItem {
+  id: string;
+  status: string;
+  createdAt: string;
+  lastMessage: { text: string; role: string } | null;
+}
+
 const formSchema = z.object({
   message: z.string().min(1, "Message is required"),
 });
 
 export const WidgetChatScreen = () => {
-  const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
 
   const widgetSettings = useAtomValue(widgetSettingsAtom);
   const conversationId = useAtomValue(conversationIdAtom);
   const organizationId = useAtomValue(organizationIdAtom);
+  const agentId = useAtomValue(agentIdAtom);
   const contactSession = useAtomValue(
     contactSessionAtomFamily(organizationId || "")
   );
 
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [conversationStatus, setConversationStatus] = useState<string>("unresolved");
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [isMultiline, setIsMultiline] = useState(false);
 
-  const onBack = () => {
-    setConversationId(null);
-    setScreen("selection");
+  // Execute menu actions after dropdown closes to avoid fetch abort
+  useEffect(() => {
+    if (menuOpen || !pendingAction) return;
+
+    const action = pendingAction;
+    setPendingAction(null);
+
+    if (action === "new-chat") {
+      if (!organizationId || !contactSession?.sessionToken) return;
+      api.createConversation(
+        contactSession.sessionToken,
+        organizationId,
+        agentId ?? undefined,
+      ).then((result) => {
+        setMessages([]);
+        setConversationStatus("unresolved");
+        setShowHistory(false);
+        setConversationId(result.conversationId);
+      });
+    } else if (action === "end-chat") {
+      if (!conversationId || !contactSession?.sessionToken) return;
+      api.endConversation(conversationId, contactSession.sessionToken).then(() => {
+        setConversationStatus("resolved");
+      });
+    } else if (action === "view-history") {
+      if (!contactSession?.sessionToken) return;
+      api.getConversations(contactSession.sessionToken).then((convs) => {
+        setConversations(convs);
+        setShowHistory(true);
+      });
+    }
+  }, [menuOpen, pendingAction, organizationId, agentId, conversationId, contactSession, setConversationId]);
+
+  const onSelectConversation = (id: string) => {
+    setShowHistory(false);
+    setMessages([]);
+    setConversationStatus("unresolved");
+    setConversationId(id);
   };
 
   const suggestions = useMemo(() => {
@@ -118,6 +169,7 @@ export const WidgetChatScreen = () => {
     if (!conversationId || !contactSession?.sessionToken) return;
 
     form.reset();
+    setIsMultiline(false);
 
     // Optimistically add user message (SSE will replace with real message)
     const tempMsg: MessageData = {
@@ -138,68 +190,135 @@ export const WidgetChatScreen = () => {
   return (
     <>
       <WidgetHeader className="flex items-center justify-between">
-        <div className="flex items-center gap-x-2">
-          <Button
-            onClick={onBack}
-            size="icon"
-            variant="transparent"
-          >
-            <ArrowLeftIcon />
-          </Button>
-          <p>Chat</p>
+        <div className="flex items-center gap-x-2.5">
+          <DicebearAvatar imageUrl="/logo.svg" seed="assistant" size={28} />
+          <p className="text-sm font-semibold">AI Agent</p>
         </div>
-        <Button
-          size="icon"
-          variant="transparent"
-        >
-          <MenuIcon />
-        </Button>
-      </WidgetHeader>
-      <AIConversation>
-        <AIConversationContent>
-          {messages.map((message) => {
-            const isCustomer = message.role === "user";
-            return (
-              <AIMessage
-                from={isCustomer ? "user" : "assistant"}
-                key={message.id}
+        <div className="flex items-center">
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="transparent">
+                <MoreHorizontalIcon className="size-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={() => setPendingAction("new-chat")}>
+                <SquarePenIcon className="size-4" />
+                Start a new chat
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => setPendingAction("end-chat")}
+                disabled={conversationStatus === "resolved"}
               >
-                <AIMessageContent>
-                  <AIResponse>{message.content}</AIResponse>
-                </AIMessageContent>
-                {!isCustomer && (
-                  <DicebearAvatar
-                    imageUrl="/logo.svg"
-                    seed="assistant"
-                    size={32}
-                  />
-                )}
-              </AIMessage>
-            );
-          })}
-        </AIConversationContent>
-      </AIConversation>
-      {messages.length === 1 && (
-        <AISuggestions className="flex w-full flex-col items-end p-2">
-          {suggestions.map((suggestion) => (
-            <AISuggestion
-              key={suggestion}
-              onClick={() => {
-                form.setValue("message", suggestion, {
-                  shouldValidate: true,
-                  shouldDirty: true,
-                  shouldTouch: true,
-                });
-                form.handleSubmit(onSubmit)();
-              }}
-              suggestion={suggestion}
-            />
-          ))}
-        </AISuggestions>
+                <XIcon className="size-4" />
+                End chat
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setPendingAction("view-history")}>
+                <ClockIcon className="size-4" />
+                View recent chats
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </WidgetHeader>
+      {conversationStatus === "escalated" && (
+        <div className="flex items-center gap-2 bg-blue-50 px-4 py-2 text-xs text-blue-700">
+          <UserIcon className="size-3.5" />
+          <span>You&apos;re now connected with a support agent</span>
+        </div>
       )}
-      <Form {...form}>
-          <AIInput
-            className="rounded-none border-x-0 border-b-0"
+      {showHistory ? (
+        <div className="flex flex-1 flex-col overflow-y-auto">
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <p className="text-sm font-medium">Recent chats</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowHistory(false)}
+            >
+              Back
+            </Button>
+          </div>
+          <div className="flex flex-1 flex-col gap-y-1 p-2">
+            {conversations.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No recent chats
+              </p>
+            ) : (
+              conversations.map((conversation) => (
+                <button
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-3 text-left hover:bg-accent transition-colors"
+                  key={conversation.id}
+                  onClick={() => onSelectConversation(conversation.id)}
+                >
+                  <div className="flex flex-col gap-1 overflow-hidden">
+                    <p className="truncate text-sm">
+                      {conversation.lastMessage?.text || "New conversation"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(conversation.createdAt), { addSuffix: true })}
+                    </p>
+                  </div>
+                  <ConversationStatusIcon
+                    status={conversation.status as "unresolved" | "escalated" | "resolved"}
+                    className="shrink-0 ml-2"
+                  />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          <AIConversation>
+            <AIConversationContent>
+              {messages.map((message) => {
+                const isCustomer = message.role === "user";
+                return (
+                  <AIMessage
+                    from={isCustomer ? "user" : "assistant"}
+                    key={message.id}
+                  >
+                    <AIMessageContent>
+                      {message.role === "support" && (
+                        <span className="text-[10px] text-muted-foreground mb-0.5 block">
+                          Support Agent
+                        </span>
+                      )}
+                      <AIResponse>{message.content}</AIResponse>
+                    </AIMessageContent>
+                  </AIMessage>
+                );
+              })}
+            </AIConversationContent>
+          </AIConversation>
+          {messages.length > 0 && !messages.some((m) => m.role === "user") && suggestions.length > 0 && (
+            <div className="flex flex-wrap justify-end gap-2 px-3 pb-2">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className="cursor-pointer rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                  onClick={() => {
+                    form.setValue("message", suggestion, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                      shouldTouch: true,
+                    });
+                    form.handleSubmit(onSubmit)();
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <div className="shrink-0 px-3 pb-1">
+        <Form {...form}>
+          <form
+            className={`flex items-end gap-2 border bg-background pl-3 px-2 py-2 rounded-xl`}
             onSubmit={form.handleSubmit(onSubmit)}
           >
             <FormField
@@ -208,8 +327,15 @@ export const WidgetChatScreen = () => {
               name="message"
               render={({ field }) => (
                 <AIInputTextarea
+                  minHeight={24}
+                  maxHeight={84}
+                  className="!min-h-0 !p-0 text-sm"
                   disabled={conversationStatus === "resolved"}
-                  onChange={field.onChange}
+                  onChange={(e) => {
+                    field.onChange(e);
+                    const target = e.target as HTMLTextAreaElement;
+                    setIsMultiline(target.value.includes("\n") || target.scrollHeight > 32);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -219,22 +345,25 @@ export const WidgetChatScreen = () => {
                   placeholder={
                     conversationStatus === "resolved"
                       ? "This conversation has been resolved."
-                      : "Type your message..."
+                      : "Message..."
                   }
                   value={field.value}
                 />
               )}
             />
-            <AIInputToolbar>
-              <AIInputTools />
-              <AIInputSubmit
-                disabled={conversationStatus === "resolved" || !form.formState.isValid}
-                status="ready"
-                type="submit"
-              />
-            </AIInputToolbar>
-          </AIInput>
-      </Form>
+            <AIInputSubmit
+              className="size-8 rounded-xl"
+              disabled={conversationStatus === "resolved" || !form.formState.isValid}
+              status="ready"
+              type="submit"
+            />
+          </form>
+        </Form>
+        <div className="flex items-center justify-center gap-[1px] py-1.5 text-[10px] text-muted-foreground">
+          <span>Powered by</span>
+          <span className="font-semibold">Dochat</span>
+        </div>
+      </div>
     </>
   );
 };

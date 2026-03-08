@@ -188,11 +188,11 @@ export const ConversationIdView = ({
       <AIConversation className="max-h-[calc(100vh-180px)]">
         <AIConversationContent>
           {messages.map((message) => {
-            // Dashboard perspective: "user" = customer (right), "assistant"/"support" = our side (left)
+            // Dashboard perspective: customer (right blue bubble), assistant/operator (left)
             const isCustomer = message.role === "user";
             return (
               <AIMessage
-                from={isCustomer ? "assistant" : "user"}
+                from={isCustomer ? "user" : "assistant"}
                 key={message.id}
               >
                 <AIMessageContent>

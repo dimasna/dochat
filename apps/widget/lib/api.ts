@@ -87,6 +87,18 @@ export const api = {
     return res.json();
   },
 
+  endConversation: async (conversationId: string, sessionToken: string) => {
+    const res = await fetch(
+      `${API_BASE}/api/embed/conversations/${conversationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionToken, status: "resolved" }),
+      },
+    );
+    return res.json();
+  },
+
   getMessagesStreamUrl: (conversationId: string, sessionToken: string) => {
     return `${API_BASE}/api/embed/conversations/${conversationId}/messages/stream?sessionToken=${sessionToken}`;
   },

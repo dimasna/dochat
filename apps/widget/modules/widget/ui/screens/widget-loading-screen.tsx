@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { LoaderIcon } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { agentIdAtom, contactSessionAtomFamily, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
+import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { api } from "@/lib/api";
 
@@ -20,6 +20,7 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
   const setLoadingMessage = useSetAtom(loadingMessageAtom);
   const setErrorMessage = useSetAtom(errorMessageAtom);
   const setScreen = useSetAtom(screenAtom);
+  const setConversationId = useSetAtom(conversationIdAtom);
 
   const contactSession = useAtomValue(contactSessionAtomFamily(organizationId || ""));
 
@@ -98,13 +99,31 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
       });
   }, [step, organizationId, agentId, setWidgetSettings, setLoadingMessage]);
 
-  // Step 4: Navigate to appropriate screen
+  // Step 4: Navigate — auto-create conversation if session valid, else auth
   useEffect(() => {
     if (step !== "done") return;
 
     const hasValidSession = contactSession?.sessionId && sessionValid;
-    setScreen(hasValidSession ? "selection" : "auth");
-  }, [step, contactSession, sessionValid, setScreen]);
+    if (!hasValidSession) {
+      setScreen("auth");
+      return;
+    }
+
+    setLoadingMessage("Starting conversation...");
+
+    api.createConversation(
+      contactSession.sessionToken,
+      organizationId!,
+      agentId ?? undefined,
+    )
+      .then((result) => {
+        setConversationId(result.conversationId);
+        setScreen("chat");
+      })
+      .catch(() => {
+        setScreen("auth");
+      });
+  }, [step, contactSession, sessionValid, organizationId, agentId, setScreen, setConversationId, setLoadingMessage]);
 
   return (
     <>

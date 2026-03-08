@@ -10,7 +10,15 @@ export const CustomizationView = () => {
     queryFn: async () => {
       const res = await fetch("/api/widget-settings");
       if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      return res.json() as Promise<{
+        agentId: string;
+        greetMessage?: string;
+        suggestion1?: string | null;
+        suggestion2?: string | null;
+        suggestion3?: string | null;
+        vapiAssistantId?: string | null;
+        vapiPhoneNumber?: string | null;
+      }>;
     },
   });
 
@@ -50,6 +58,7 @@ export const CustomizationView = () => {
 
         <div className="mt-8">
           <CustomizationForm
+            agentId={widgetSettings?.agentId}
             initialData={widgetSettings}
             hasVapiPlugin={!!hasVapiPlugin}
           />

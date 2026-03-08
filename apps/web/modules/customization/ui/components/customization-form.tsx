@@ -37,11 +37,13 @@ interface WidgetSettings {
 }
 
 interface CustomizationFormProps {
+  agentId?: string;
   initialData?: WidgetSettings | null;
   hasVapiPlugin: boolean;
 }
 
 export const CustomizationForm = ({
+  agentId,
   initialData,
   hasVapiPlugin,
 }: CustomizationFormProps) => {
@@ -68,6 +70,7 @@ export const CustomizationForm = ({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          agentId,
           greetMessage: values.greetMessage,
           suggestion1: values.defaultSuggestions.suggestion1 || null,
           suggestion2: values.defaultSuggestions.suggestion2 || null,

@@ -12,7 +12,7 @@ import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { useAtomValue, useSetAtom } from "jotai";
-import { contactSessionAtomFamily, organizationIdAtom, screenAtom } from "../../atoms/widget-atoms";
+import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, organizationIdAtom, screenAtom } from "../../atoms/widget-atoms";
 import { api } from "@/lib/api";
 
 const formSchema = z.object({
@@ -22,8 +22,10 @@ const formSchema = z.object({
 
 export const WidgetAuthScreen = () => {
   const setScreen = useSetAtom(screenAtom);
+  const setConversationId = useSetAtom(conversationIdAtom);
 
   const organizationId = useAtomValue(organizationIdAtom);
+  const agentId = useAtomValue(agentIdAtom);
   const setContactSession = useSetAtom(
     contactSessionAtomFamily(organizationId || "")
   );
@@ -66,7 +68,15 @@ export const WidgetAuthScreen = () => {
       sessionId: result.sessionId,
       sessionToken: result.sessionToken,
     });
-    setScreen("selection");
+
+    // Auto-create conversation and go directly to chat
+    const conversation = await api.createConversation(
+      result.sessionToken,
+      organizationId,
+      agentId ?? undefined,
+    );
+    setConversationId(conversation.conversationId);
+    setScreen("chat");
   };
 
   return (
