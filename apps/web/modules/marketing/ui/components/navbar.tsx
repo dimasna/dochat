@@ -9,7 +9,7 @@ import {
   SheetTrigger,
   SheetTitle,
 } from "@workspace/ui/components/sheet";
-import { MenuIcon } from "lucide-react";
+import { MenuIcon, StarIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SignedIn, SignedOut } from "@clerk/nextjs";
 
@@ -65,6 +65,17 @@ export const Navbar = () => {
 
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <a href="https://github.com/dimasna/dochat" target="_blank" rel="noopener noreferrer">
+              <StarIcon className="size-3.5" />
+              Star on GitHub
+            </a>
+          </Button>
           <SignedIn>
             <Button size="sm" asChild>
               <Link href="/workspace">Go to Workspace</Link>
@@ -105,6 +116,16 @@ export const Navbar = () => {
                   {link.label}
                 </a>
               ))}
+              <a
+                href="https://github.com/dimasna/dochat"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <StarIcon className="size-4" />
+                Star on GitHub
+              </a>
               <hr className="border-border my-2" />
               <SignedIn>
                 <Button asChild>

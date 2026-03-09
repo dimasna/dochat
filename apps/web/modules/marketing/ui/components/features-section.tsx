@@ -1,6 +1,6 @@
 "use client";
 
-import { BotIcon, CodeIcon, MessageCircleIcon } from "lucide-react";
+import { BotIcon, CodeIcon, GithubIcon, MessageCircleIcon } from "lucide-react";
 import { SectionBadge } from "./section-badge";
 import { AnimateOnScroll } from "./animate-on-scroll";
 import { FrameBox } from "./frame-box";
@@ -23,6 +23,12 @@ const features = [
     title: "One-Line Integration",
     description:
       "Add a single script tag to your site. Works with React, Vue, WordPress, anything.",
+  },
+  {
+    icon: GithubIcon,
+    title: "Open Source",
+    description:
+      "Fully open source. Self-host on your own infrastructure, customize everything, and contribute.",
   },
 ];
 
@@ -91,7 +97,7 @@ export const FeaturesSection = () => (
       </AnimateOnScroll>
 
       {/* Feature cards — framed cells */}
-      <div className="grid md:grid-cols-3 mb-12">
+      <div className="grid sm:grid-cols-2 md:grid-cols-4 mb-12">
         {features.map((f, i) => (
           <AnimateOnScroll key={f.title} delay={i * 100}>
             <div

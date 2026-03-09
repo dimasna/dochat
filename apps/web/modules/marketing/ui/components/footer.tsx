@@ -8,23 +8,21 @@ const columns = [
       { label: "Features", href: "#features" },
       { label: "Pricing", href: "#pricing" },
       { label: "FAQ", href: "#faq" },
-      { label: "Changelog", href: "#" },
     ],
   },
   {
     title: "Resources",
     links: [
-      { label: "Documentation", href: "#" },
-      { label: "Blog", href: "#" },
+      { label: "Documentation", href: "/docs" },
       { label: "Support", href: "mailto:support@dochat.site" },
     ],
   },
   {
     title: "Company",
     links: [
-      { label: "About", href: "#" },
-      { label: "Privacy Policy", href: "#" },
-      { label: "Terms of Service", href: "#" },
+      { label: "About", href: "/about" },
+      { label: "Privacy Policy", href: "/privacy" },
+      { label: "Terms of Service", href: "/terms" },
     ],
   },
 ];
@@ -66,13 +64,13 @@ export const Footer = () => (
         </span>
         <div className="flex gap-5">
           <Link
-            href="#"
+            href="/terms"
             className="text-muted-foreground/60 text-xs hover:text-muted-foreground transition-colors"
           >
             Terms of Service
           </Link>
           <Link
-            href="#"
+            href="/privacy"
             className="text-muted-foreground/60 text-xs hover:text-muted-foreground transition-colors"
           >
             Privacy Policy

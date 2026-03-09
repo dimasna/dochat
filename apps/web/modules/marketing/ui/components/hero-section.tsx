@@ -43,7 +43,7 @@ export const HeroSection = () => (
         <div>
           <AnimateOnScroll>
             <div className="flex gap-2.5 mb-6 flex-wrap">
-              {["AI AGENT", "KNOWLEDGE BASE", "24/7"].map((tag) => (
+              {["OPEN SOURCE", "AI AGENT", "KNOWLEDGE BASE", "24/7"].map((tag) => (
                 <span
                   key={tag}
                   className="bg-muted border border-border px-3 py-0.5 rounded-md text-[11px] font-mono text-muted-foreground tracking-widest"
@@ -63,7 +63,7 @@ export const HeroSection = () => (
 
           <AnimateOnScroll delay={200}>
             <p className="text-lg text-muted-foreground mb-8 leading-relaxed max-w-[440px]">
-              Deploy custom AI chatbots trained on your data. One line of code.
+              Open-source AI chatbots trained on your data. Deploy with one line of code.
             </p>
           </AnimateOnScroll>
 
