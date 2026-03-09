@@ -9,7 +9,7 @@ import { chatBubbleIcon, closeIcon } from './icons';
   // Derive widget URL from this script's own src
   const currentScript = document.currentScript as HTMLScriptElement;
   const WIDGET_URL = currentScript
-    ? new URL(currentScript.src).origin
+    ? currentScript.src.replace(/\/widget\.js(\?.*)?$/, '')
     : window.location.origin;
 
   // Get configuration from script tag
