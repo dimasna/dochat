@@ -31,5 +31,5 @@ export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 if (process.env.NODE_ENV !== "production")
   globalForPrisma.prisma = prisma as unknown as PrismaClient;
 
-export * from "@prisma/client";
+export { Prisma } from "@prisma/client";
 export type { PrismaClient } from "@prisma/client";
