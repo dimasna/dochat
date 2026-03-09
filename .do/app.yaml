@@ -133,6 +133,9 @@ services:
       - key: NEXT_PUBLIC_API_URL
         value: "${web.PUBLIC_URL}"
         scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_WIDGET_BASE_PATH
+        value: "/widget"
+        scope: RUN_AND_BUILD_TIME
 
 ingress:
   rules:
