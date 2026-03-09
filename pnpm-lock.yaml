@@ -47,6 +47,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.0
         version: 5.2.0(react-hook-form@7.61.1(react@19.0.0))
+      '@prisma/client':
+        specifier: ^6.4.1
+        version: 6.19.2(prisma@6.19.2(typescript@5.7.3))(typescript@5.7.3)
       '@tanstack/react-query':
         specifier: ^5.65.0
         version: 5.90.21(react@19.0.0)

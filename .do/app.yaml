@@ -15,7 +15,7 @@ services:
     build_command: |
       npm install -g pnpm@10.4.1 --force
       touch .env
-      pnpm install --frozen-lockfile --config.onlyBuiltDependencies='["prisma","@prisma/client","@prisma/engines","esbuild","@swc/core","sharp"]'
+      pnpm install --frozen-lockfile
       cd packages/db && npx prisma generate && cd ../..
       cd apps/web && npx next build && cd ../..
       mkdir -p apps/web/.next/standalone/apps/web/.next
@@ -90,7 +90,7 @@ services:
     build_command: |
       npm install -g pnpm@10.4.1 --force
       touch .env
-      pnpm install --frozen-lockfile --config.onlyBuiltDependencies='["esbuild","@swc/core","sharp"]'
+      pnpm install --frozen-lockfile
       cd apps/widget && npx next build && cd ../..
       mkdir -p apps/widget/.next/standalone/apps/widget/.next
       cp -r apps/widget/public apps/widget/.next/standalone/apps/widget/public
