@@ -1,24 +1,25 @@
 "use client";
 
+import { BotIcon, CodeIcon, MessageCircleIcon } from "lucide-react";
 import { SectionBadge } from "./section-badge";
 import { AnimateOnScroll } from "./animate-on-scroll";
 import { FrameBox } from "./frame-box";
 
 const features = [
   {
-    icon: "\u{1F916}",
+    icon: BotIcon,
     title: "Custom AI Agents",
     description:
       "Train AI agents on your knowledge base. Upload docs, websites, or FAQs and your agent learns everything.",
   },
   {
-    icon: "\u{1F4AC}",
+    icon: MessageCircleIcon,
     title: "Live Conversations",
     description:
       "Monitor and manage all customer conversations in real time. Jump in when needed.",
   },
   {
-    icon: "\u26A1",
+    icon: CodeIcon,
     title: "One-Line Integration",
     description:
       "Add a single script tag to your site. Works with React, Vue, WordPress, anything.",
@@ -98,8 +99,8 @@ export const FeaturesSection = () => (
                 i < features.length - 1 ? "md:border-r" : ""
               }`}
             >
-              <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-xl mb-4">
-                {f.icon}
+              <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-4">
+                <f.icon className="size-5" />
               </div>
               <h3 className="text-foreground font-semibold text-base mb-2">
                 {f.title}

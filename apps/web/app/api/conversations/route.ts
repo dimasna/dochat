@@ -55,7 +55,33 @@ export async function GET(req: NextRequest) {
       return !(meta && typeof meta === "object" && (meta as Record<string, unknown>).isPlayground === true);
     });
 
-    return NextResponse.json(filtered);
+    // Group conversations by contact session
+    const groupMap = new Map<string, {
+      contactSession: (typeof filtered)[number]["contactSession"];
+      conversations: typeof filtered;
+      lastUpdatedAt: string;
+    }>();
+
+    for (const conv of filtered) {
+      const sessionId = conv.contactSession.id;
+      const existing = groupMap.get(sessionId);
+      if (existing) {
+        existing.conversations.push(conv);
+      } else {
+        groupMap.set(sessionId, {
+          contactSession: conv.contactSession,
+          conversations: [conv],
+          lastUpdatedAt: conv.updatedAt.toISOString(),
+        });
+      }
+    }
+
+    const grouped = Array.from(groupMap.values()).map((g) => ({
+      ...g,
+      conversationCount: g.conversations.length,
+    }));
+
+    return NextResponse.json(grouped);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });

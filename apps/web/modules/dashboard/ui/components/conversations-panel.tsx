@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { cn } from "@workspace/ui/lib/utils";
-import { ListIcon, ArrowRightIcon, ArrowUpIcon, CheckIcon, CornerUpLeftIcon } from "lucide-react";
+import { ListIcon, ArrowRightIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, CornerUpLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConversationStatusIcon } from "@workspace/ui/components/conversation-status-icon";
@@ -21,17 +21,13 @@ import { statusFilterAtom } from "../../atoms";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { useActiveAgent } from "@/hooks/use-active-agent";
+import { useCallback, useState } from "react";
 
 interface ConversationItem {
   id: string;
   status: string;
   createdAt: string;
-  contactSession: {
-    id: string;
-    name: string;
-    email: string;
-    metadata?: { timezone?: string } | null;
-  };
+  updatedAt: string;
   agent?: {
     id: string;
     name: string;
@@ -43,6 +39,18 @@ interface ConversationItem {
   }>;
 }
 
+interface ContactGroup {
+  contactSession: {
+    id: string;
+    name: string;
+    email: string;
+    metadata?: { timezone?: string } | null;
+  };
+  conversations: ConversationItem[];
+  conversationCount: number;
+  lastUpdatedAt: string;
+}
+
 export const ConversationsPanel = () => {
   const pathname = usePathname();
 
@@ -50,7 +58,18 @@ export const ConversationsPanel = () => {
   const setStatusFilter = useSetAtom(statusFilterAtom);
   const { activeAgentId } = useActiveAgent();
 
-  const { data: conversations = [], isLoading } = useQuery<ConversationItem[]>({
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpand = useCallback((sessionId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }, []);
+
+  const { data: groups = [], isLoading } = useQuery<ContactGroup[]>({
     queryKey: ["conversations", statusFilter, activeAgentId],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -112,11 +131,9 @@ export const ConversationsPanel = () => {
       ) : (
         <ScrollArea className="max-h-[calc(100vh-53px)]">
           <div className="flex w-full flex-1 flex-col text-sm">
-            {conversations.map((conversation) => {
-              const lastMessage = conversation.messages[0];
-              const isLastMessageFromOperator = lastMessage?.role !== "user";
-
-              const metadata = conversation.contactSession.metadata as
+            {groups.map((group) => {
+              const { contactSession } = group;
+              const metadata = contactSession.metadata as
                 | { timezone?: string }
                 | null
                 | undefined;
@@ -125,58 +142,116 @@ export const ConversationsPanel = () => {
                 ? getCountryFlagUrl(country.code)
                 : undefined;
 
-              return (
-                <Link
-                  key={conversation.id}
-                  className={cn(
-                    "relative flex cursor-pointer items-start gap-3 border-b p-4 py-5 text-sm leading-tight hover:bg-accent hover:text-accent-foreground",
-                    pathname === `/conversations/${conversation.id}` &&
-                      "bg-accent text-accent-foreground",
-                  )}
-                  href={`/conversations/${conversation.id}`}
-                >
-                  <div
-                    className={cn(
-                      "-translate-y-1/2 absolute top-1/2 left-0 h-[64%] w-1 rounded-r-full bg-neutral-300 opacity-0 transition-opacity",
-                      pathname === `/conversations/${conversation.id}` &&
-                        "opacity-100",
-                    )}
-                  />
+              const isActive = group.conversations.some(
+                (c) => pathname === `/conversations/${c.id}`,
+              );
+              const isExpanded = expanded.has(contactSession.id) || isActive;
+              const lastMessage = group.conversations[0]?.messages[0];
+              const lastMsgFromOperator = lastMessage?.role !== "user";
 
-                  <DicebearAvatar
-                    seed={conversation.contactSession.id}
-                    badgeImageUrl={countryFlagUrl}
-                    size={40}
-                    className="shrink-0"
-                  />
-                  <div className="flex-1">
-                    <div className="flex w-full items-center gap-2">
-                      <span className="truncate font-bold">
-                        {conversation.contactSession.name}
-                      </span>
-                      <span className="ml-auto shrink-0 text-muted-foreground text-xs">
-                        {formatDistanceToNow(new Date(conversation.createdAt))}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2">
-                      <div className="flex w-0 grow items-center gap-1">
-                        {isLastMessageFromOperator && (
-                          <CornerUpLeftIcon className="size-3 shrink-0 text-muted-foreground" />
-                        )}
-                        <span
-                          className={cn(
-                            "line-clamp-1 text-muted-foreground text-xs",
-                            !isLastMessageFromOperator &&
-                              "font-bold text-black",
-                          )}
-                        >
-                          {lastMessage?.content}
+              return (
+                <div key={contactSession.id}>
+                  {/* Contact session header */}
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(contactSession.id)}
+                    className="flex w-full items-center gap-3 border-b bg-muted/40 px-4 py-3 text-left hover:bg-muted/70 transition-colors"
+                  >
+                    <ChevronRightIcon
+                      className={cn(
+                        "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
+                    <DicebearAvatar
+                      seed={contactSession.id}
+                      badgeImageUrl={countryFlagUrl}
+                      size={32}
+                      className="shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-bold">
+                          {contactSession.name}
                         </span>
+                        {group.conversationCount > 1 && (
+                          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            {group.conversationCount}
+                          </span>
+                        )}
                       </div>
-                      <ConversationStatusIcon status={conversation.status as "unresolved" | "escalated" | "resolved"} />
+                      {!isExpanded && lastMessage && (
+                        <span className={cn(
+                          "line-clamp-1 text-xs text-muted-foreground block",
+                          !lastMsgFromOperator && "font-bold text-black",
+                        )}>
+                          {lastMessage.content}
+                        </span>
+                      )}
+                      {isExpanded && (
+                        <span className="text-xs text-muted-foreground truncate block">
+                          {contactSession.email}
+                        </span>
+                      )}
                     </div>
-                  </div>
-                </Link>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(group.lastUpdatedAt))}
+                    </span>
+                  </button>
+
+                  {/* Conversations under this contact */}
+                  {isExpanded && group.conversations.map((conversation) => {
+                    const lastMessage = conversation.messages[0];
+                    const isLastMessageFromOperator = lastMessage?.role !== "user";
+
+                    return (
+                      <Link
+                        key={conversation.id}
+                        className={cn(
+                          "relative flex cursor-pointer items-start gap-3 border-b px-4 py-4 pl-14 text-sm leading-tight hover:bg-accent hover:text-accent-foreground",
+                          pathname === `/conversations/${conversation.id}` &&
+                            "bg-accent text-accent-foreground",
+                        )}
+                        href={`/conversations/${conversation.id}`}
+                      >
+                        <div
+                          className={cn(
+                            "-translate-y-1/2 absolute top-1/2 left-0 h-[64%] w-1 rounded-r-full bg-neutral-300 opacity-0 transition-opacity",
+                            pathname === `/conversations/${conversation.id}` &&
+                              "opacity-100",
+                          )}
+                        />
+                        <div className="flex-1">
+                          <div className="flex w-full items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(conversation.createdAt))}
+                            </span>
+                            <ConversationStatusIcon
+                              status={conversation.status as "unresolved" | "escalated" | "resolved"}
+                              className="ml-auto shrink-0"
+                            />
+                          </div>
+                          {lastMessage && (
+                            <div className="mt-1 flex items-center gap-1">
+                              {isLastMessageFromOperator && (
+                                <CornerUpLeftIcon className="size-3 shrink-0 text-muted-foreground" />
+                              )}
+                              <span
+                                className={cn(
+                                  "line-clamp-1 text-muted-foreground text-xs",
+                                  !isLastMessageFromOperator &&
+                                    "font-bold text-black",
+                                )}
+                              >
+                                {lastMessage.content}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>

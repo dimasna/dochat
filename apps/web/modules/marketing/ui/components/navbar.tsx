@@ -38,7 +38,7 @@ export const Navbar = () => {
     >
       <div className="max-w-[1160px] mx-auto px-6 h-16 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 group">
+        <Link href="/" className="flex items-center gap-1.5 group">
           <Image
             src="/logo.svg"
             alt="Dochat"

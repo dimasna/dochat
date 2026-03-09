@@ -12,12 +12,12 @@ export const WidgetFooter = () => {
     <footer className="flex items-center justify-between border-t bg-background">
       <Button
         className="h-14 flex-1 rounded-none"
-        onClick={() => setScreen("selection")}
+        onClick={() => setScreen("chat")}
         size="icon"
         variant="ghost"
       >
         <HomeIcon
-          className={cn("size-5", screen === "selection" && "text-primary")}
+          className={cn("size-5", screen === "chat" && "text-primary")}
         />
       </Button>
       <Button

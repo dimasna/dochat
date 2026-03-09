@@ -6,8 +6,7 @@ import { useForm } from "react-hook-form";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@workspace/ui/components/button";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ClockIcon, MoreHorizontalIcon, SquarePenIcon, UserIcon, XIcon } from "lucide-react";
-import { DicebearAvatar } from "@workspace/ui/components/dicebear-avatar";
+import { ClockIcon, MessageSquareTextIcon, MoreHorizontalIcon, SquarePenIcon, UserIcon, XIcon } from "lucide-react";
 import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, organizationIdAtom, widgetSettingsAtom } from "../../atoms/widget-atoms";
 import { Form, FormField } from "@workspace/ui/components/form";
 import {
@@ -63,6 +62,17 @@ export const WidgetChatScreen = () => {
     contactSessionAtomFamily(organizationId || "")
   );
 
+  // Local greeting message shown before any conversation is created
+  const greetingMessage = useMemo<MessageData | null>(() => {
+    if (!widgetSettings?.greetMessage) return null;
+    return {
+      id: "greeting",
+      role: "assistant",
+      content: widgetSettings.greetMessage,
+      createdAt: new Date().toISOString(),
+    };
+  }, [widgetSettings?.greetMessage]);
+
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [conversationStatus, setConversationStatus] = useState<string>("unresolved");
   const [showHistory, setShowHistory] = useState(false);
@@ -70,6 +80,25 @@ export const WidgetChatScreen = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [isMultiline, setIsMultiline] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+
+  // Combined messages: local greeting (when no conversation yet) + real messages
+  const displayMessages = useMemo(() => {
+    if (messages.length > 0) return messages;
+    return greetingMessage ? [greetingMessage] : [];
+  }, [messages, greetingMessage]);
+
+  // Restore last active conversation on mount (e.g. after page reload)
+  useEffect(() => {
+    if (conversationId || !contactSession?.sessionToken) return;
+    api.getConversations(contactSession.sessionToken).then((convs) => {
+      const active = convs.find((c) => c.status !== "resolved");
+      if (active) {
+        setConversationId(active.id);
+        setConversationStatus(active.status);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Execute menu actions after dropdown closes to avoid fetch abort
   useEffect(() => {
@@ -79,17 +108,11 @@ export const WidgetChatScreen = () => {
     setPendingAction(null);
 
     if (action === "new-chat") {
-      if (!organizationId || !contactSession?.sessionToken) return;
-      api.createConversation(
-        contactSession.sessionToken,
-        organizationId,
-        agentId ?? undefined,
-      ).then((result) => {
-        setMessages([]);
-        setConversationStatus("unresolved");
-        setShowHistory(false);
-        setConversationId(result.conversationId);
-      });
+      // Just reset state — conversation will be created on first message
+      setMessages([]);
+      setConversationStatus("unresolved");
+      setShowHistory(false);
+      setConversationId(null);
     } else if (action === "end-chat") {
       if (!conversationId || !contactSession?.sessionToken) return;
       api.endConversation(conversationId, contactSession.sessionToken).then(() => {
@@ -132,6 +155,9 @@ export const WidgetChatScreen = () => {
         if (data.type === "init") {
           setMessages(data.messages);
         } else if (data.type === "message") {
+          if (data.message.role === "assistant" || data.message.role === "support") {
+            setIsTyping(false);
+          }
           setMessages((prev) => {
             // Deduplicate and replace optimistic temp messages
             const filtered = prev.filter(
@@ -166,7 +192,7 @@ export const WidgetChatScreen = () => {
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    if (!conversationId || !contactSession?.sessionToken) return;
+    if (!contactSession?.sessionToken) return;
 
     form.reset();
     setIsMultiline(false);
@@ -179,9 +205,23 @@ export const WidgetChatScreen = () => {
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, tempMsg]);
+    setIsTyping(true);
+
+    // Create conversation on first message if none exists
+    let activeConversationId = conversationId;
+    if (!activeConversationId) {
+      if (!organizationId) return;
+      const result = await api.createConversation(
+        contactSession.sessionToken,
+        organizationId,
+        agentId ?? undefined,
+      );
+      activeConversationId = result.conversationId;
+      setConversationId(activeConversationId);
+    }
 
     await api.sendMessage({
-      conversationId,
+      conversationId: activeConversationId,
       sessionToken: contactSession.sessionToken,
       content: values.message,
     });
@@ -191,7 +231,13 @@ export const WidgetChatScreen = () => {
     <>
       <WidgetHeader className="flex items-center justify-between">
         <div className="flex items-center gap-x-2.5">
-          <DicebearAvatar imageUrl={widgetSettings?.widgetLogo || "/logo.svg"} seed="assistant" size={28} />
+          {widgetSettings?.widgetLogo ? (
+            <img src={widgetSettings.widgetLogo} alt="" className="size-7 rounded-full object-cover" />
+          ) : (
+            <div className="flex size-7 items-center justify-center rounded-full bg-white/20">
+              <MessageSquareTextIcon className="size-4" />
+            </div>
+          )}
           <p className="text-sm font-semibold">{widgetSettings?.agentName || "AI Agent"}</p>
         </div>
         <div className="flex items-center">
@@ -272,7 +318,7 @@ export const WidgetChatScreen = () => {
         <>
           <AIConversation>
             <AIConversationContent>
-              {messages.map((message) => {
+              {displayMessages.map((message) => {
                 const isCustomer = message.role === "user";
                 return (
                   <AIMessage
@@ -290,9 +336,20 @@ export const WidgetChatScreen = () => {
                   </AIMessage>
                 );
               })}
+              {isTyping && (
+                <AIMessage from="assistant">
+                  <AIMessageContent>
+                    <div className="flex items-center gap-1 py-1">
+                      <span className="size-1.5 rounded-full bg-muted-foreground animate-[typing-dot_1.4s_ease-in-out_infinite]" />
+                      <span className="size-1.5 rounded-full bg-muted-foreground animate-[typing-dot_1.4s_ease-in-out_0.2s_infinite]" />
+                      <span className="size-1.5 rounded-full bg-muted-foreground animate-[typing-dot_1.4s_ease-in-out_0.4s_infinite]" />
+                    </div>
+                  </AIMessageContent>
+                </AIMessage>
+              )}
             </AIConversationContent>
           </AIConversation>
-          {messages.length > 0 && !messages.some((m) => m.role === "user") && suggestions.length > 0 && (
+          {displayMessages.length > 0 && !displayMessages.some((m) => m.role === "user") && suggestions.length > 0 && (
             <div className="flex flex-wrap justify-end gap-2 px-3 pb-2">
               {suggestions.map((suggestion) => (
                 <button
@@ -359,8 +416,15 @@ export const WidgetChatScreen = () => {
             />
           </form>
         </Form>
-        <div className="flex items-center justify-center gap-[1px] py-1.5 text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-center gap-0.5 py-1.5 text-[10px] text-muted-foreground">
           <span>Powered by</span>
+          <svg width="12" height="12" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="ml-0.5">
+            <rect x="2" y="2" width="36" height="30" rx="8" fill="currentColor" className="text-primary" />
+            <polygon points="8,32 14,26 20,32" fill="currentColor" className="text-primary" />
+            <rect x="10" y="11" width="14" height="2.5" rx="1.25" fill="white" />
+            <rect x="10" y="16" width="20" height="2.5" rx="1.25" fill="white" />
+            <rect x="10" y="21" width="10" height="2.5" rx="1.25" fill="white" />
+          </svg>
           <span className="font-semibold">Dochat</span>
         </div>
       </div>

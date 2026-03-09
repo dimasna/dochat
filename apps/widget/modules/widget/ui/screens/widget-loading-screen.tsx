@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { LoaderIcon } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
-import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
+import { contactSessionAtomFamily, errorMessageAtom, loadingMessageAtom, organizationIdAtom, screenAtom, widgetSettingsAtom, agentIdAtom } from "@/modules/widget/atoms/widget-atoms";
 import { api } from "@/lib/api";
 
 type InitStep = "org" | "session" | "settings" | "done";
@@ -13,14 +12,12 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
   const [step, setStep] = useState<InitStep>("org")
   const [sessionValid, setSessionValid] = useState(false);
 
-  const loadingMessage = useAtomValue(loadingMessageAtom);
   const setWidgetSettings = useSetAtom(widgetSettingsAtom);
   const setOrganizationId = useSetAtom(organizationIdAtom);
   const setAgentId = useSetAtom(agentIdAtom);
   const setLoadingMessage = useSetAtom(loadingMessageAtom);
   const setErrorMessage = useSetAtom(errorMessageAtom);
   const setScreen = useSetAtom(screenAtom);
-  const setConversationId = useSetAtom(conversationIdAtom);
 
   const contactSession = useAtomValue(contactSessionAtomFamily(organizationId || ""));
 
@@ -28,15 +25,11 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
   useEffect(() => {
     if (step !== "org") return;
 
-    setLoadingMessage("Finding organization ID...");
-
     if (!organizationId) {
       setErrorMessage("Organization ID is required");
       setScreen("error");
       return;
     }
-
-    setLoadingMessage("Verifying organization...");
 
     api.validateOrg(organizationId, agentId ?? undefined)
       .then((result) => {
@@ -59,15 +52,11 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
   useEffect(() => {
     if (step !== "session") return;
 
-    setLoadingMessage("Finding contact session...");
-
     if (!contactSession?.sessionId) {
       setSessionValid(false);
       setStep("settings");
       return;
     }
-
-    setLoadingMessage("Validating session...");
 
     api.validateSession(contactSession.sessionId)
       .then((result) => {
@@ -85,8 +74,6 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
     if (step !== "settings") return;
     if (!organizationId) return;
 
-    setLoadingMessage("Loading widget settings...");
-
     api.getConfig(organizationId, agentId ?? undefined)
       .then((settings) => {
         if (settings) {
@@ -99,7 +86,7 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
       });
   }, [step, organizationId, agentId, setWidgetSettings, setLoadingMessage]);
 
-  // Step 4: Navigate — auto-create conversation if session valid, else auth
+  // Step 4: Navigate — go to chat if session valid, else auth
   useEffect(() => {
     if (step !== "done") return;
 
@@ -109,40 +96,13 @@ export const WidgetLoadingScreen = ({ organizationId, agentId }: { organizationI
       return;
     }
 
-    setLoadingMessage("Starting conversation...");
-
-    api.createConversation(
-      contactSession.sessionToken,
-      organizationId!,
-      agentId ?? undefined,
-    )
-      .then((result) => {
-        setConversationId(result.conversationId);
-        setScreen("chat");
-      })
-      .catch(() => {
-        setScreen("auth");
-      });
-  }, [step, contactSession, sessionValid, organizationId, agentId, setScreen, setConversationId, setLoadingMessage]);
+    // Go straight to chat — conversation will be created on first message
+    setScreen("chat");
+  }, [step, contactSession, sessionValid, setScreen]);
 
   return (
-    <>
-      <WidgetHeader>
-        <div className="flex flex-col justify-between gap-y-2 px-2 py-6 font-semibold">
-          <p className="text-3xl">
-            Hi there! 👋
-          </p>
-          <p className="text-lg">
-            Let&apos;s get you started
-          </p>
-        </div>
-      </WidgetHeader>
-      <div className="flex flex-1 flex-col items-center justify-center gap-y-4 p-4 text-muted-foreground">
-        <LoaderIcon className="animate-spin" />
-        <p className="text-sm">
-         {loadingMessage || "Loading..."}
-        </p>
-      </div>
-    </>
+    <div className="flex flex-1 items-center justify-center bg-background">
+      <LoaderIcon className="size-5 animate-spin text-muted-foreground" />
+    </div>
   );
 };
