@@ -8,7 +8,6 @@ Dochat - AI Customer Support Agent SAAS
 - **Auth:** Clerk
 - **Payments:** DodoPayments
 - **AI:** DigitalOcean GenAI Platform
-- **File Uploads:** DigitalOcean GenAI (presigned URLs)
 
 ## Project Structure
 
@@ -25,25 +24,18 @@ packages/
 ## Local Development
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Set up environment variables
-cp .env.example .env   # then fill in your values
-
-# Generate Prisma client & push schema
+cp .env.example .env   # fill in your values
 pnpm db:generate
 pnpm db:push
-
-# Start dev servers
 pnpm dev
 ```
 
-The web app runs on `http://localhost:3005` and the widget on `http://localhost:3006`.
+Web app: `http://localhost:3005` | Widget: `http://localhost:3006`
 
 ## Environment Variables
 
-Create a `.env` file in the project root with the following:
+Create a `.env` file in the project root:
 
 ```env
 # Database
@@ -52,8 +44,6 @@ DATABASE_URL=
 # Clerk Auth
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 # DigitalOcean GenAI
 DIGITALOCEAN_API_TOKEN=
@@ -74,43 +64,44 @@ DODO_GROWTH_PRODUCT_ID=
 DODO_SCALE_PRODUCT_ID=
 ```
 
-## Deploying to DigitalOcean App Platform
+## Deployment (DigitalOcean App Platform)
 
 ### Prerequisites
 
-1. A [DigitalOcean](https://www.digitalocean.com/) account
-2. Your code pushed to a GitHub repository
-3. [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/) CLI installed and authenticated:
+1. [DigitalOcean](https://www.digitalocean.com/) account with [GitHub connected](https://cloud.digitalocean.com/apps) (authorize repo access)
+2. [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/) CLI installed and authenticated:
    ```bash
    brew install doctl
-   doctl auth init   # paste your DO API token when prompted
+   doctl auth init
    ```
-4. GitHub connected to your DigitalOcean account — go to the [App Platform](https://cloud.digitalocean.com/apps) dashboard, click **Create App**, and authorize GitHub access to your repo.
+3. A PostgreSQL database (managed or external) with `DATABASE_URL` in your `.env`
 
-### Steps
+### Deploy
 
-1. **Update the app spec** — open `.do/app.yaml` and replace the GitHub repo for both the `web` and `widget` services with your actual repo (e.g. `dimasna/dochat`).
+```bash
+bash .do/deploy.sh
+```
 
-2. **Deploy** — run the deploy script, which reads secrets from your local `.env` and injects them at deploy time (nothing secret is committed to git):
-   ```bash
-   bash .do/deploy.sh
-   ```
+That's it. The script reads your `.env`, injects secrets into the app spec, and creates/updates the app via `doctl`. No secrets are committed to git.
 
-3. **Run database migrations** — after the first deploy completes:
-   ```bash
-   # Option A: via doctl console
-   doctl apps console <app-id> web -- npx prisma db push
+### How It Works
 
-   # Option B: connect locally using the managed DB connection string
-   #           (find it in App Platform > Database > Connection Details)
-   DATABASE_URL="<managed-db-url>" pnpm db:push
-   ```
+- `.do/app.yaml` defines the app spec with `__PLACEHOLDER__` values for secrets
+- `.do/deploy.sh` replaces placeholders with real values from `.env` at deploy time
+- The generated spec is temporary and deleted after deployment
+- `deploy_on_push: true` auto-deploys on every push to `main`
 
-4. **Verify** — your app will be live at the URL shown in the App Platform dashboard (e.g. `https://dochat-xxxxx.ondigitalocean.app`).
+### First Deploy
+
+After the first successful deployment, push your database schema:
+
+```bash
+DATABASE_URL="<your-db-url>" pnpm db:push
+```
 
 ### Custom Domain
 
-Add a custom domain via the dashboard under **App > Settings > Domains**, or update `.do/app.yaml`:
+Add via the dashboard under **App > Settings > Domains**, or in `.do/app.yaml`:
 
 ```yaml
 domains:
@@ -118,11 +109,4 @@ domains:
     type: PRIMARY
 ```
 
-Then point your DNS to the app (CNAME record to the `.ondigitalocean.app` URL).
-
-### What the Deploy Script Does
-
-- Reads your local `.env` file (never committed to git)
-- Generates a temporary app spec with secrets injected
-- Creates or updates the app via `doctl`
-- Deletes the temporary spec — secrets never persist on disk
+Then CNAME your domain to the `.ondigitalocean.app` URL.

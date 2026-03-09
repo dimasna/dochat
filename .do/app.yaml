@@ -4,7 +4,7 @@ region: nyc
 services:
   - name: web
     github:
-      repo: dimasna/dochat  # <-- Replace with your repo
+      repo: dimasna/dochat
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -22,25 +22,6 @@ services:
       cp -r apps/web/public apps/web/.next/standalone/apps/web/public
       cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
     run_command: node apps/web/.next/standalone/apps/web/server.js
-    # Non-secret env vars are defined here.
-    # All secrets must be set via the DO dashboard or CLI after deployment.
-    # Dashboard: App > Settings > Components > web > Environment Variables
-    # CLI: doctl apps update <app-id> --spec (with secrets filled in)
-    #
-    # Secrets to set manually:
-    #   - CLERK_SECRET_KEY
-    #   - DIGITALOCEAN_API_TOKEN
-    #   - DODO_PAYMENTS_API_KEY
-    #   - DODO_PAYMENTS_WEBHOOK_SECRET
-    #   - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-    #   - DO_PROJECT_ID
-    #   - DO_AGENT_REGION
-    #   - DO_AGENT_MODEL_UUID
-    #   - DO_EMBEDDING_MODEL_UUID
-    #   - DODO_PAYMENTS_ENVIRONMENT
-    #   - DODO_STARTER_PRODUCT_ID
-    #   - DODO_GROWTH_PRODUCT_ID
-    #   - DODO_SCALE_PRODUCT_ID
     envs:
       - key: HOSTNAME
         value: "0.0.0.0"
@@ -52,7 +33,14 @@ services:
         value: "production"
         scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
-        value: "${db.DATABASE_URL}"
+        value: "__DATABASE_URL__"
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        value: "__NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY__"
+        scope: RUN_AND_BUILD_TIME
+      - key: CLERK_SECRET_KEY
+        value: "__CLERK_SECRET_KEY__"
         scope: RUN_AND_BUILD_TIME
         type: SECRET
       - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
@@ -66,6 +54,42 @@ services:
         scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL
         value: "/workspace"
+        scope: RUN_AND_BUILD_TIME
+      - key: DIGITALOCEAN_API_TOKEN
+        value: "__DIGITALOCEAN_API_TOKEN__"
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: DO_PROJECT_ID
+        value: "__DO_PROJECT_ID__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DO_AGENT_REGION
+        value: "__DO_AGENT_REGION__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DO_AGENT_MODEL_UUID
+        value: "__DO_AGENT_MODEL_UUID__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DO_EMBEDDING_MODEL_UUID
+        value: "__DO_EMBEDDING_MODEL_UUID__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DODO_PAYMENTS_API_KEY
+        value: "__DODO_PAYMENTS_API_KEY__"
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: DODO_PAYMENTS_ENVIRONMENT
+        value: "__DODO_PAYMENTS_ENVIRONMENT__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DODO_PAYMENTS_WEBHOOK_SECRET
+        value: "__DODO_PAYMENTS_WEBHOOK_SECRET__"
+        scope: RUN_AND_BUILD_TIME
+        type: SECRET
+      - key: DODO_STARTER_PRODUCT_ID
+        value: "__DODO_STARTER_PRODUCT_ID__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DODO_GROWTH_PRODUCT_ID
+        value: "__DODO_GROWTH_PRODUCT_ID__"
+        scope: RUN_AND_BUILD_TIME
+      - key: DODO_SCALE_PRODUCT_ID
+        value: "__DODO_SCALE_PRODUCT_ID__"
         scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_WIDGET_URL
         value: "${widget.PUBLIC_URL}"
@@ -122,10 +146,3 @@ ingress:
       match:
         path:
           prefix: /widget
-
-databases:
-  - name: db
-    engine: PG
-    version: "16"
-    size: db-s-1vcpu-1gb
-    num_nodes: 1
