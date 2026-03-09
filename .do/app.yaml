@@ -95,10 +95,10 @@ services:
         value: "${widget.PUBLIC_URL}"
         scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_LANDING_WIDGET_ORG_ID
-        value: ""
+        value: "__NEXT_PUBLIC_LANDING_WIDGET_ORG_ID__"
         scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_LANDING_WIDGET_AGENT_ID
-        value: ""
+        value: "__NEXT_PUBLIC_LANDING_WIDGET_AGENT_ID__"
         scope: RUN_AND_BUILD_TIME
 
   - name: widget

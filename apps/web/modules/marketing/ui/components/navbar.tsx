@@ -11,7 +11,7 @@ import {
 } from "@workspace/ui/components/sheet";
 import { MenuIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -20,7 +20,6 @@ const navLinks = [
 ];
 
 export const Navbar = () => {
-  const { isSignedIn } = useAuth();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -66,25 +65,24 @@ export const Navbar = () => {
 
         {/* Desktop CTA */}
         <div className="hidden md:flex items-center gap-3">
-          {isSignedIn ? (
+          <SignedIn>
             <Button size="sm" asChild>
               <Link href="/workspace">Go to Workspace</Link>
             </Button>
-          ) : (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                asChild
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Link href="/sign-in">Sign in</Link>
-              </Button>
-              <Button size="sm" asChild>
-                <Link href="/sign-up">Get Started</Link>
-              </Button>
-            </>
-          )}
+          </SignedIn>
+          <SignedOut>
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Link href="/sign-in">Sign in</Link>
+            </Button>
+            <Button size="sm" asChild>
+              <Link href="/sign-up">Get Started</Link>
+            </Button>
+          </SignedOut>
         </div>
 
         {/* Mobile menu */}
@@ -108,26 +106,25 @@ export const Navbar = () => {
                 </a>
               ))}
               <hr className="border-border my-2" />
-              {isSignedIn ? (
+              <SignedIn>
                 <Button asChild>
                   <Link href="/workspace" onClick={() => setOpen(false)}>
                     Go to Workspace
                   </Link>
                 </Button>
-              ) : (
-                <>
-                  <Button variant="outline" asChild>
-                    <Link href="/sign-in" onClick={() => setOpen(false)}>
-                      Sign in
-                    </Link>
-                  </Button>
-                  <Button asChild>
-                    <Link href="/sign-up" onClick={() => setOpen(false)}>
-                      Get Started
-                    </Link>
-                  </Button>
-                </>
-              )}
+              </SignedIn>
+              <SignedOut>
+                <Button variant="outline" asChild>
+                  <Link href="/sign-in" onClick={() => setOpen(false)}>
+                    Sign in
+                  </Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/sign-up" onClick={() => setOpen(false)}>
+                    Get Started
+                  </Link>
+                </Button>
+              </SignedOut>
             </nav>
           </SheetContent>
         </Sheet>
