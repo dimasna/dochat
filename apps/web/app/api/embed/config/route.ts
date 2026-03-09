@@ -25,17 +25,24 @@ export async function GET(req: NextRequest) {
   // If agentId provided, get that agent's settings
   // Otherwise, find the first agent for this org
   let settings;
+  let agentName: string | null = null;
 
   if (agentId) {
     settings = await prisma.widgetSettings.findUnique({
       where: { agentId },
     });
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { name: true },
+    });
+    agentName = agent?.name ?? null;
   } else {
     const agent = await prisma.agent.findFirst({
       where: { orgId },
       orderBy: { createdAt: "asc" },
     });
     if (agent) {
+      agentName = agent.name;
       settings = await prisma.widgetSettings.findUnique({
         where: { agentId: agent.id },
       });
@@ -51,6 +58,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     {
+      agentName,
       greetMessage: settings.greetMessage,
       suggestion1: settings.suggestion1,
       suggestion2: settings.suggestion2,

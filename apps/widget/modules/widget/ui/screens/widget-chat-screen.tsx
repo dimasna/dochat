@@ -191,8 +191,8 @@ export const WidgetChatScreen = () => {
     <>
       <WidgetHeader className="flex items-center justify-between">
         <div className="flex items-center gap-x-2.5">
-          <DicebearAvatar imageUrl="/logo.svg" seed="assistant" size={28} />
-          <p className="text-sm font-semibold">AI Agent</p>
+          <DicebearAvatar imageUrl={widgetSettings?.widgetLogo || "/logo.svg"} seed="assistant" size={28} />
+          <p className="text-sm font-semibold">{widgetSettings?.agentName || "AI Agent"}</p>
         </div>
         <div className="flex items-center">
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>

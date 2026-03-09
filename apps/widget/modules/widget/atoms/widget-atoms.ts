@@ -4,10 +4,13 @@ import { WidgetScreen } from "@/modules/widget/types";
 import { CONTACT_SESSION_KEY } from "../constants";
 
 export interface WidgetSettingsData {
+  agentName: string | null;
   greetMessage: string;
   suggestion1: string | null;
   suggestion2: string | null;
   suggestion3: string | null;
+  themeColor: string | null;
+  widgetLogo: string | null;
 }
 
 export interface ContactSessionData {

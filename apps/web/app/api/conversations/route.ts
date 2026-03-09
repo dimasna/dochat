@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@dochat/db";
+import { Prisma, prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -31,9 +31,10 @@ export async function GET(req: NextRequest) {
     const agentId = req.nextUrl.searchParams.get("agentId");
     const where: Record<string, unknown> = {
       orgId,
-      contactSession: {
-        NOT: { metadata: { path: ["isPlayground"], equals: true } },
-      },
+      // Exclude playground sessions: old ones have SQL NULL metadata,
+      // new ones have { isPlayground: true }. Prisma's NOT with JSON path
+      // doesn't work on relations, so we filter isPlayground in JS below.
+      contactSession: { metadata: { not: Prisma.DbNull } },
     };
     if (status) where.status = status;
     if (agentId) where.agentId = agentId;
@@ -48,7 +49,13 @@ export async function GET(req: NextRequest) {
       orderBy: { updatedAt: "desc" },
     });
 
-    return NextResponse.json(conversations);
+    // Filter out playground sessions (metadata.isPlayground === true)
+    const filtered = conversations.filter((c) => {
+      const meta = c.contactSession?.metadata;
+      return !(meta && typeof meta === "object" && (meta as Record<string, unknown>).isPlayground === true);
+    });
+
+    return NextResponse.json(filtered);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });

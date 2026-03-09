@@ -60,7 +60,7 @@ import { chatBubbleIcon, closeIcon } from './icons';
       // We need to figure out the web app URL. It could be same origin or different.
       // Try multiple approaches:
       const urls = [
-        `${WIDGET_URL}/api/embed/config?${params}`,
+        `${WIDGET_URL}/api/config?${params}`,
       ];
 
       for (const url of urls) {
