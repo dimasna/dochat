@@ -55,6 +55,10 @@ DO_EMBEDDING_MODEL_UUID=
 # Widget
 NEXT_PUBLIC_WIDGET_URL=http://localhost:3006
 
+# Landing page widget (optional — shows demo widget on marketing page)
+NEXT_PUBLIC_LANDING_WIDGET_ORG_ID=
+NEXT_PUBLIC_LANDING_WIDGET_AGENT_ID=
+
 # DodoPayments
 DODO_PAYMENTS_API_KEY=
 DODO_PAYMENTS_ENVIRONMENT=
@@ -86,10 +90,12 @@ That's it. The script reads your `.env`, injects secrets into the app spec, and 
 
 ### How It Works
 
-- `.do/app.yaml` defines the app spec with `__PLACEHOLDER__` values for secrets
+- `.do/app.yaml` defines a two-service app spec (web + widget) with `__PLACEHOLDER__` values for secrets
 - `.do/deploy.sh` replaces placeholders with real values from `.env` at deploy time
 - The generated spec is temporary and deleted after deployment
 - `deploy_on_push: true` auto-deploys on every push to `main`
+- Ingress routes `/widget/*` to the widget service, everything else to the web service
+- DO App Platform strips the `/widget` prefix before forwarding — the widget uses `assetPrefix` (not `basePath`) accordingly
 
 ### First Deploy
 

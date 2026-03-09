@@ -30,7 +30,8 @@ get_env() {
   done < "$ENV_FILE"
 }
 
-# --- Env vars to inject (key → placeholder in app.yaml) ---
+# --- Env vars to inject (replaces __KEY__ placeholders in app.yaml) ---
+# Add new env vars here AND in app.yaml with __KEY__ placeholder format.
 SECRETS=(
   DATABASE_URL
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
