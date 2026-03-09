@@ -4,74 +4,111 @@ region: nyc
 services:
   - name: web
     github:
-      repo: dimasna/dochat
+      repo: YOUR_GITHUB_USERNAME/dochat  # <-- Replace with your repo
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: pnpm install && pnpm db:generate && pnpm --filter @dochat/web build
-    run_command: pnpm --filter @dochat/web start
-    http_port: 3000
+    environment_slug: node-js
     instance_count: 1
-    instance_size_slug: professional-xs
+    instance_size_slug: apps-s-1vcpu-1gb
+    http_port: 3000
+    build_command: |
+      npm install -g pnpm@10.4.1
+      pnpm install --frozen-lockfile
+      pnpm db:generate
+      pnpm --filter @dochat/web build
+      cp -r apps/web/public apps/web/.next/standalone/apps/web/public
+      cp -r apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
+    run_command: node apps/web/.next/standalone/server.js
+    # Non-secret env vars are defined here.
+    # All secrets must be set via the DO dashboard or CLI after deployment.
+    # Dashboard: App > Settings > Components > web > Environment Variables
+    # CLI: doctl apps update <app-id> --spec (with secrets filled in)
+    #
+    # Secrets to set manually:
+    #   - CLERK_SECRET_KEY
+    #   - DIGITALOCEAN_API_TOKEN
+    #   - DODO_PAYMENTS_API_KEY
+    #   - DODO_PAYMENTS_WEBHOOK_SECRET
+    #   - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    #   - DO_PROJECT_ID
+    #   - DO_AGENT_REGION
+    #   - DO_AGENT_MODEL_UUID
+    #   - DO_EMBEDDING_MODEL_UUID
+    #   - DODO_PAYMENTS_ENVIRONMENT
+    #   - DODO_STARTER_PRODUCT_ID
+    #   - DODO_GROWTH_PRODUCT_ID
+    #   - DODO_SCALE_PRODUCT_ID
     envs:
+      - key: HOSTNAME
+        value: "0.0.0.0"
+        scope: RUN_TIME
+      - key: PORT
+        value: "3000"
+        scope: RUN_TIME
+      - key: NODE_ENV
+        value: "production"
+        scope: RUN_AND_BUILD_TIME
       - key: DATABASE_URL
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-        scope: RUN_AND_BUILD_TIME
-        type: SECRET
-      - key: CLERK_SECRET_KEY
+        value: "${db.DATABASE_URL}"
         scope: RUN_AND_BUILD_TIME
         type: SECRET
       - key: NEXT_PUBLIC_CLERK_SIGN_IN_URL
-        value: /sign-in
+        value: "/sign-in"
         scope: RUN_AND_BUILD_TIME
       - key: NEXT_PUBLIC_CLERK_SIGN_UP_URL
-        value: /sign-up
+        value: "/sign-up"
         scope: RUN_AND_BUILD_TIME
-      - key: DO_SPACES_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: DO_SPACES_SECRET
-        scope: RUN_TIME
-        type: SECRET
-      - key: DO_SPACES_BUCKET
-        scope: RUN_TIME
-        type: SECRET
-      - key: DO_SPACES_REGION
-        value: nyc3
-        scope: RUN_TIME
-      - key: DO_SPACES_ENDPOINT
-        value: https://nyc3.digitaloceanspaces.com
-        scope: RUN_TIME
-      - key: GRADIENT_MODEL_ACCESS_KEY
-        scope: RUN_TIME
-        type: SECRET
-      - key: GRADIENT_KB_UUID
-        scope: RUN_TIME
-        type: SECRET
-      - key: DIGITALOCEAN_API_TOKEN
-        scope: RUN_TIME
-        type: SECRET
-      - key: NODE_ENV
-        value: production
+      - key: NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL
+        value: "/workspace"
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL
+        value: "/workspace"
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_WIDGET_URL
+        value: "${widget.PUBLIC_URL}"
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_LANDING_WIDGET_ORG_ID
+        value: ""
+        scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_LANDING_WIDGET_AGENT_ID
+        value: ""
         scope: RUN_AND_BUILD_TIME
 
   - name: widget
     github:
-      repo: dimasna/dochat
+      repo: YOUR_GITHUB_USERNAME/dochat  # <-- Replace with your repo
       branch: main
       deploy_on_push: true
     source_dir: /
-    build_command: pnpm install && pnpm --filter widget build
-    run_command: pnpm --filter widget start
-    http_port: 3001
+    environment_slug: node-js
     instance_count: 1
-    instance_size_slug: basic-xxs
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    http_port: 3000
+    build_command: |
+      npm install -g pnpm@10.4.1
+      pnpm install --frozen-lockfile
+      pnpm --filter widget build
+      cp -r apps/widget/public apps/widget/.next/standalone/apps/widget/public
+      cp -r apps/widget/.next/static apps/widget/.next/standalone/apps/widget/.next/static
+    run_command: node apps/widget/.next/standalone/server.js
     envs:
-      - key: NEXT_PUBLIC_API_URL
-        value: ${web.PUBLIC_URL}
-        scope: RUN_AND_BUILD_TIME
+      - key: HOSTNAME
+        value: "0.0.0.0"
+        scope: RUN_TIME
+      - key: PORT
+        value: "3000"
+        scope: RUN_TIME
       - key: NODE_ENV
-        value: production
+        value: "production"
         scope: RUN_AND_BUILD_TIME
+      - key: NEXT_PUBLIC_API_URL
+        value: "${web.PUBLIC_URL}"
+        scope: RUN_AND_BUILD_TIME
+
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1

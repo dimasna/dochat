@@ -24,7 +24,6 @@ export const DashboardSidebar = () => {
   const pathname = usePathname();
 
   const isWorkspaceLevel =
-    pathname === "/" ||
     pathname === "/workspace" ||
     pathname === "/files" ||
     pathname.startsWith("/files") ||
@@ -41,7 +40,7 @@ export const DashboardSidebar = () => {
                   href="/workspace"
                   icon={BotIcon}
                   label="Agents"
-                  active={pathname === "/workspace" || pathname === "/"}
+                  active={pathname === "/workspace"}
                 />
                 <MenuItem
                   href="/files"

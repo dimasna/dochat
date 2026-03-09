@@ -41,11 +41,53 @@ import { chatBubbleIcon, closeIcon } from './icons';
     return;
   }
 
+  // Derive API base from widget URL (web app serves the API)
+  // The widget app knows its own API base, but embed.ts needs to fetch config
+  // from the web app. We'll try the WIDGET_URL's origin to reach /api/embed/config.
+  const API_BASE = WIDGET_URL.replace(/:\d+$/, '').replace(/:\d+/, '') || WIDGET_URL;
+
+  // Theme config (fetched from API)
+  let themeColor = '#3b82f6';
+  let widgetLogo: string | null = null;
+
+  async function fetchConfig() {
+    try {
+      const params = new URLSearchParams({ orgId: organizationId! });
+      if (agentId) params.set('agentId', agentId);
+
+      // Try fetching config from the web app API
+      // The widget iframe origin is the widget app, but the config API is on the web app
+      // We need to figure out the web app URL. It could be same origin or different.
+      // Try multiple approaches:
+      const urls = [
+        `${WIDGET_URL}/api/embed/config?${params}`,
+      ];
+
+      for (const url of urls) {
+        try {
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.themeColor) themeColor = data.themeColor;
+            if (data.widgetLogo) widgetLogo = data.widgetLogo;
+            return;
+          }
+        } catch {
+          // Try next URL
+        }
+      }
+    } catch {
+      // Use defaults
+    }
+  }
+
   function init() {
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', render);
+      document.addEventListener('DOMContentLoaded', () => {
+        fetchConfig().then(render);
+      });
     } else {
-      render();
+      fetchConfig().then(render);
     }
   }
 
@@ -53,7 +95,14 @@ import { chatBubbleIcon, closeIcon } from './icons';
     // Create floating action button
     button = document.createElement('button');
     button.id = 'dochat-widget-button';
-    button.innerHTML = chatBubbleIcon;
+
+    // Use logo if available, otherwise use chat icon
+    if (widgetLogo) {
+      button.innerHTML = `<img src="${widgetLogo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" alt="Chat" />`;
+    } else {
+      button.innerHTML = chatBubbleIcon;
+    }
+
     button.style.cssText = `
       position: fixed;
       ${position === 'bottom-right' ? 'right: 20px;' : 'left: 20px;'}
@@ -61,7 +110,7 @@ import { chatBubbleIcon, closeIcon } from './icons';
       width: 60px;
       height: 60px;
       border-radius: 50%;
-      background: #3b82f6;
+      background: ${themeColor};
       color: white;
       border: none;
       cursor: pointer;
@@ -69,7 +118,7 @@ import { chatBubbleIcon, closeIcon } from './icons';
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 24px rgba(59, 130, 246, 0.35);
+      box-shadow: 0 4px 24px ${themeColor}59;
       transition: all 0.2s ease;
     `;
 
@@ -181,9 +230,13 @@ import { chatBubbleIcon, closeIcon } from './icons';
       setTimeout(() => {
         if (container) container.style.display = 'none';
       }, 300);
-      // Change button icon back to chat
-      button.innerHTML = chatBubbleIcon;
-      button.style.background = '#3b82f6';
+      // Change button icon back
+      if (widgetLogo) {
+        button.innerHTML = `<img src="${widgetLogo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" alt="Chat" />`;
+      } else {
+        button.innerHTML = chatBubbleIcon;
+      }
+      button.style.background = themeColor;
     }
   }
 

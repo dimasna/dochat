@@ -20,8 +20,7 @@ export const TopBar = () => {
   const { activeAgent, agents, setActiveAgentId } = useActiveAgent();
 
   const isWorkspaceLevel =
-    WORKSPACE_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/")) ||
-    pathname === "/";
+    WORKSPACE_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
   const isInsideAgent = !isWorkspaceLevel && !!activeAgent;
 
   return (

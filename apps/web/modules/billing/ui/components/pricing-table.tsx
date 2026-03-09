@@ -242,7 +242,7 @@ export const PricingTable = ({
             </Button>
           ) : (
             <Button variant="outline" asChild>
-              <a href="mailto:support@dochat.dev">Contact Us</a>
+              <a href="mailto:support@dochat.site">Contact Us</a>
             </Button>
           )}
         </CardFooter>
