@@ -115,7 +115,7 @@ services:
       npm install -g pnpm@10.4.1 --force
       touch .env
       pnpm install --frozen-lockfile
-      cd apps/widget && npx next build && cd ../..
+      cd apps/widget && pnpm build:embed && npx next build && cd ../..
       mkdir -p apps/widget/.next/standalone/apps/widget/.next
       cp -r apps/widget/public apps/widget/.next/standalone/apps/widget/public
       cp -r apps/widget/.next/static apps/widget/.next/standalone/apps/widget/.next/static
