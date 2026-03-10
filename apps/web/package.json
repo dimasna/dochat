@@ -10,16 +10,18 @@
     "start": "dotenv -e ../../.env -- next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.700.0",
     "@aws-sdk/s3-request-presigner": "^3.700.0",
     "@clerk/nextjs": "^6.12.0",
-    "@prisma/client": "^6.4.1",
     "@dochat/db": "workspace:*",
     "@dochat/shared": "workspace:*",
     "@hookform/resolvers": "^5.2.0",
+    "@prisma/client": "^6.4.1",
     "@tanstack/react-query": "^5.65.0",
     "@workspace/ui": "workspace:*",
     "bowser": "^2.12.0",
@@ -44,6 +46,7 @@
     "@workspace/eslint-config": "workspace:^",
     "@workspace/typescript-config": "workspace:*",
     "dotenv-cli": "^11.0.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
   }
 }
