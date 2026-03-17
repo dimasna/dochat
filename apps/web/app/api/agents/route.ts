@@ -19,11 +19,11 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    // Fire-and-forget: finalize any agents stuck in "provisioning"
-    const provisioningAgents = agents.filter((a) => a.status === "provisioning");
-    if (provisioningAgents.length > 0) {
+    // Fire-and-forget: finalize any agents stuck in "provisioning" or "recovering"
+    const pendingAgents = agents.filter((a) => a.status === "provisioning" || a.status === "recovering");
+    if (pendingAgents.length > 0) {
       Promise.all(
-        provisioningAgents.map((a) => tryFinalizeAgent(a.id)),
+        pendingAgents.map((a) => tryFinalizeAgent(a.id)),
       ).catch((err) =>
         console.error("[GET agents] tryFinalizeAgent failed:", err),
       );

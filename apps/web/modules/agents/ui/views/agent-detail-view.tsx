@@ -94,6 +94,8 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
   });
 
   const isProvisioning = agent?.status === "provisioning";
+  const isRecovering = agent?.status === "recovering";
+  const isUnavailable = isProvisioning || isRecovering;
 
   const handleDelete = async () => {
     if (!confirm("Delete this agent? This will remove the agent, its workspace, and knowledge base from DigitalOcean.")) {
@@ -233,10 +235,10 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
                     variant={agent.status === "active" ? "default" : "secondary"}
                     className="capitalize"
                   >
-                    {agent.status === "provisioning" && (
+                    {isUnavailable && (
                       <Loader2Icon className="size-3 mr-1 animate-spin" />
                     )}
-                    {agent.status}
+                    {isRecovering ? "restarting" : agent.status}
                   </Badge>
                 </div>
                 {agent.description && (
@@ -259,13 +261,15 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
           </div>
         </div>
 
-        {/* Provisioning banner */}
-        {isProvisioning && (
+        {/* Provisioning / recovering banner */}
+        {isUnavailable && (
           <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950 px-4 py-3 mb-6">
             <div className="flex items-center gap-2">
               <Loader2Icon className="size-4 animate-spin text-yellow-600 dark:text-yellow-400" />
               <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                Agent is being provisioned on DigitalOcean. Knowledge base management will be available once the agent is active.
+                {isRecovering
+                  ? "Agent is restarting after a connectivity issue. This usually takes a minute."
+                  : "Agent is being provisioned on DigitalOcean. Knowledge base management will be available once the agent is active."}
               </p>
             </div>
           </div>
@@ -275,7 +279,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
         <div className="rounded-lg border bg-background p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold">Agent Settings</h2>
-            {!isEditing && !isProvisioning && (
+            {!isEditing && !isUnavailable && (
               <Button size="sm" variant="outline" onClick={handleStartEdit}>
                 <PenIcon className="size-3.5 mr-1" />
                 Edit
@@ -382,7 +386,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
                     size="icon"
                     className="size-8"
                     onClick={() => handleDetachKb(agentKb.knowledgeBase.id)}
-                    disabled={isProvisioning}
+                    disabled={isUnavailable}
                   >
                     <TrashIcon className="size-3.5 text-muted-foreground" />
                   </Button>
@@ -393,12 +397,12 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
 
           {agent.knowledgeBases.length === 0 && (
             <p className="text-muted-foreground text-sm mb-4">
-              No knowledge bases attached.{!isProvisioning && " Attach knowledge bases below."}
+              No knowledge bases attached.{!isUnavailable && " Attach knowledge bases below."}
             </p>
           )}
 
           {/* Available org KBs to attach */}
-          {!isProvisioning && unattachedKbs.length > 0 && (
+          {!isUnavailable && unattachedKbs.length > 0 && (
             <div>
               <p className="text-sm text-muted-foreground mb-2">
                 Available knowledge bases ({unattachedKbs.length}):

@@ -52,7 +52,7 @@ export const AgentsView = () => {
       return res.json();
     },
     refetchInterval: (query) =>
-      query.state.data?.some((a) => a.status === "provisioning") ? 5000 : false,
+      query.state.data?.some((a) => a.status === "provisioning" || a.status === "recovering") ? 5000 : false,
   });
 
   useOrgEvents((event) => {
@@ -148,7 +148,7 @@ function AgentCard({
   onClick: () => void;
   onDelete: (e: React.MouseEvent) => void;
 }) {
-  const isProvisioning = agent.status === "provisioning";
+  const isUnavailable = agent.status === "provisioning" || agent.status === "recovering";
 
   return (
     <div
@@ -170,10 +170,10 @@ function AgentCard({
             <div className="h-3 w-16 rounded-full bg-blue-500" />
           </div>
         </div>
-        {isProvisioning && (
+        {isUnavailable && (
           <div className="absolute bottom-3 left-4 flex items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-700 backdrop-blur-sm">
             <Loader2Icon className="size-3 animate-spin" />
-            Provisioning
+            {agent.status === "recovering" ? "Restarting" : "Provisioning"}
           </div>
         )}
       </div>

@@ -1,0 +1,14 @@
+packages:
+  - name: cron
+    functions:
+      - name: health-check
+        runtime: nodejs:default
+        web: true
+        triggers:
+          - name: daily-health-check
+            sourceType: scheduler
+            sourceDetails:
+              cron: "0 6 * * *"
+        parameters:
+          APP_URL: "https://dochat-4p6bd.ondigitalocean.app"
+          CRON_SECRET: "DOchat!2345"

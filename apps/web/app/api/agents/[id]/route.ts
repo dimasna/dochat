@@ -37,8 +37,8 @@ export async function GET(
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
 
-    // Auto-finalize: if provisioning, check if DO agent is deployed and activate it
-    if (agent.status === "provisioning") {
+    // Auto-finalize: if provisioning/recovering, check if DO agent is deployed and activate it
+    if (agent.status === "provisioning" || agent.status === "recovering") {
       const finalized = await tryFinalizeAgent(agent.id);
       if (finalized) {
         agent = await prisma.agent.findUnique({

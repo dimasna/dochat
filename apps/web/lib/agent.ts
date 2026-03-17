@@ -4,6 +4,9 @@ import { eventBus } from "@/lib/event-bus";
 
 const DO_API_BASE = "https://api.digitalocean.com/v2/gen-ai";
 
+// Prevents duplicate recovery attempts for the same agent
+const recoveringAgentIds = new Set<string>();
+
 function getDoToken() {
   const token = process.env.DIGITALOCEAN_API_TOKEN;
   if (!token) throw new Error("DIGITALOCEAN_API_TOKEN not configured");
@@ -237,7 +240,7 @@ export async function recreateAgentWithKbs(
  */
 export async function tryFinalizeAgent(agentId: string): Promise<boolean> {
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-  if (!agent || agent.status !== "provisioning") return false;
+  if (!agent || (agent.status !== "provisioning" && agent.status !== "recovering")) return false;
 
   const doToken = getDoToken();
 
@@ -278,65 +281,29 @@ export async function getAgent(agentId: string): Promise<AgentInfo> {
   const agent = await prisma.agent.findUnique({ where: { id: agentId } });
   if (!agent) throw new Error(`Agent ${agentId} not found`);
 
-  if (agent.status === "active") {
+  if (agent.status === "active" && agent.agentEndpoint && agent.agentAccessKey) {
     return {
       agentEndpoint: agent.agentEndpoint,
       agentAccessKey: agent.agentAccessKey,
     };
   }
 
-  if (agent.status === "provisioning") {
-    return finalizeAgent(agent.id, agent.agentUuid);
+  if (agent.status === "provisioning" || agent.status === "recovering") {
+    // Try a single non-blocking check instead of polling for minutes
+    const finalized = await tryFinalizeAgent(agentId);
+    if (finalized) {
+      const updated = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+      return {
+        agentEndpoint: updated.agentEndpoint,
+        agentAccessKey: updated.agentAccessKey,
+      };
+    }
+    throw new Error(`Agent ${agentId} is still ${agent.status}. Please try again shortly.`);
   }
 
   throw new Error(`Agent ${agentId} is in status: ${agent.status}`);
 }
 
-async function finalizeAgent(agentId: string, agentUuid: string): Promise<AgentInfo> {
-  const doToken = getDoToken();
-
-  const deploymentUrl = await waitForAgentDeployment(agentUuid, doToken);
-  const accessKey = await createAgentAccessKey(agentUuid, doToken);
-
-  await prisma.agent.update({
-    where: { id: agentId },
-    data: {
-      agentEndpoint: deploymentUrl,
-      agentAccessKey: accessKey,
-      status: "active",
-    },
-  });
-
-  return { agentEndpoint: deploymentUrl, agentAccessKey: accessKey };
-}
-
-async function waitForAgentDeployment(
-  agentUuid: string,
-  doToken: string,
-  maxAttempts = 90,
-  intervalMs = 3000,
-): Promise<string> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const res = await fetch(`${DO_API_BASE}/agents/${agentUuid}`, {
-      headers: { Authorization: `Bearer ${doToken}` },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const url = data.agent?.deployment?.url;
-      if (url) return url;
-
-      if (i % 10 === 0) {
-        const status = data.agent?.deployment?.status;
-        console.log(`[agent] Waiting for deployment... status=${status} attempt=${i + 1}/${maxAttempts}`);
-      }
-    }
-
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-
-  throw new Error(`Agent ${agentUuid} did not deploy within ${maxAttempts * intervalMs / 1000}s`);
-}
 
 async function createAgentAccessKey(agentUuid: string, doToken: string): Promise<string> {
   const res = await fetch(`${DO_API_BASE}/agents/${agentUuid}/api_keys`, {
@@ -357,6 +324,22 @@ async function createAgentAccessKey(agentUuid: string, doToken: string): Promise
   const key = data.api_key_info?.secret_key || data.api_key?.api_key || data.api_key?.key;
   if (!key) throw new Error(`No access key returned. Response: ${JSON.stringify(data)}`);
   return key;
+}
+
+/**
+ * Create a new access key for an agent and update the DB.
+ * Used when the existing key is expired/rejected.
+ */
+async function refreshAgentAccessKey(agentId: string): Promise<string> {
+  const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+  const doToken = getDoToken();
+  const newKey = await createAgentAccessKey(agent.agentUuid, doToken);
+  await prisma.agent.update({
+    where: { id: agentId },
+    data: { agentAccessKey: newKey },
+  });
+  console.log(`[refreshAgentAccessKey] Refreshed access key for agent ${agentId}`);
+  return newKey;
 }
 
 // ─── Agent update/delete ────────────────────────────────
@@ -468,18 +451,31 @@ export async function generateAgentResponse(
     { role: "user", content: userMessage },
   ];
 
-  const res = await fetch(`${agent.agentEndpoint}/api/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${agent.agentAccessKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messages,
-      stream: false,
-      include_retrieval_info: true,
-    }),
-  });
+  const callAgent = async (accessKey: string) => {
+    const res = await fetch(`${agent.agentEndpoint}/api/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages,
+        stream: false,
+        include_retrieval_info: true,
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    return res;
+  };
+
+  let res = await callAgent(agent.agentAccessKey);
+
+  // If access key expired/invalid, refresh it and retry once
+  if (res.status === 401 || res.status === 403) {
+    console.log(`[generateAgentResponse] Access key rejected (${res.status}), refreshing...`);
+    const newKey = await refreshAgentAccessKey(agentId);
+    res = await callAgent(newKey);
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -490,6 +486,70 @@ export async function generateAgentResponse(
   const responseContent = data.choices?.[0]?.message?.content || "";
 
   return postProcessResponse(conversationId, responseContent);
+}
+
+// ─── Health check & recovery ─────────────────────────────
+
+/**
+ * Lightweight health check: ping the agent endpoint with a short timeout.
+ * Returns true if the endpoint responds (any HTTP status means reachable).
+ */
+export async function checkAgentEndpointHealth(agentEndpoint: string): Promise<boolean> {
+  try {
+    await fetch(`${agentEndpoint}/api/v1/models`, {
+      method: "GET",
+      signal: AbortSignal.timeout(10_000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recover a stale agent by deleting and recreating it on DO.
+ * Idempotent — skips if recovery is already in progress for this agent.
+ */
+export async function recoverAgent(agentId: string): Promise<void> {
+  if (recoveringAgentIds.has(agentId)) {
+    console.log(`[recoverAgent] Recovery already in progress for ${agentId}`);
+    return;
+  }
+
+  recoveringAgentIds.add(agentId);
+
+  try {
+    const agent = await prisma.agent.findUniqueOrThrow({
+      where: { id: agentId },
+      include: {
+        knowledgeBases: {
+          include: { knowledgeBase: true },
+        },
+      },
+    });
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { status: "recovering" },
+    });
+    eventBus.emit(agent.orgId, { type: "agent:status", id: agentId, status: "recovering" });
+
+    const kbUuids = agent.knowledgeBases
+      .map((akb) => akb.knowledgeBase.gradientKbUuid)
+      .filter((uuid): uuid is string => !!uuid);
+
+    await recreateAgentWithKbs(agentId, kbUuids);
+
+    console.log(`[recoverAgent] Recovery initiated for ${agentId}, now provisioning`);
+  } catch (err) {
+    console.error(`[recoverAgent] Failed for ${agentId}:`, err);
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { status: "failed" },
+    }).catch(() => {});
+  } finally {
+    recoveringAgentIds.delete(agentId);
+  }
 }
 
 // ─── Post-processing for escalation/resolution ──────────
