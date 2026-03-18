@@ -33,6 +33,11 @@ export const PLAN_LIMITS = {
 
 export type PlanName = keyof typeof PLAN_LIMITS;
 
+export function normalizePlanName(plan: string): PlanName {
+  if (plan in PLAN_LIMITS) return plan as PlanName;
+  return "free";
+}
+
 export function getPlanLimits(plan: string) {
-  return PLAN_LIMITS[plan as PlanName] ?? PLAN_LIMITS.free;
+  return PLAN_LIMITS[normalizePlanName(plan)];
 }

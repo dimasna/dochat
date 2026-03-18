@@ -13,7 +13,7 @@ model Subscription {
   id                   String    @id @default(cuid())
   orgId                String    @unique // Clerk organization ID
   status               String    @default("active") // active, inactive, cancelled
-  plan                 String    @default("free")   // free, pro, enterprise
+  plan                 String    @default("free")   // free, starter, growth, scale, enterprise
   onboardingComplete   Boolean   @default(false)
   openSearchDatabaseId String?   // Shared OpenSearch DB ID for org's KBs
   dodoCustomerId       String?   // DodoPayments customer ID

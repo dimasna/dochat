@@ -26,6 +26,7 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Label } from "@workspace/ui/components/label";
 import {
+  ArrowUpRightIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   FileIcon,
@@ -43,6 +44,8 @@ import { useState } from "react";
 import { DeleteFileDialog } from "../components/delete-file-dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOrgEvents } from "@/hooks/use-org-events";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
+import { useRouter } from "next/navigation";
 
 interface KnowledgeSource {
   id: string;
@@ -99,6 +102,8 @@ function getTotalSize(sources: KnowledgeSource[]) {
 
 export const FilesView = () => {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { canCreateKb, canAddSource } = usePlanLimits();
 
   const { data: knowledgeBases = [], isLoading } = useQuery<KnowledgeBase[]>({
     queryKey: ["knowledge-bases"],
@@ -310,10 +315,17 @@ export const FilesView = () => {
 
           <div className="mt-8 rounded-lg border bg-background">
             <div className="flex items-center justify-end border-b px-6 py-4">
-              <Button onClick={() => setCreateDialogOpen(true)}>
-                <PlusIcon />
-                New Knowledge Base
-              </Button>
+              {canCreateKb ? (
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <PlusIcon />
+                  New Knowledge Base
+                </Button>
+              ) : (
+                <Button variant="outline" onClick={() => router.push("/billing")}>
+                  <ArrowUpRightIcon className="size-4 mr-2" />
+                  Upgrade to add more
+                </Button>
+              )}
             </div>
             <Table>
               <TableHeader>
@@ -342,14 +354,17 @@ export const FilesView = () => {
                 ) : (
                   knowledgeBases.map((kb) => {
                     const isExpanded = expandedKbs.has(kb.id);
+                    const sourceAllowed = canAddSource(kb._count.sources);
                     return (
                       <KbRow
                         key={kb.id}
                         kb={kb}
                         isExpanded={isExpanded}
+                        canAddSource={sourceAllowed}
                         onToggle={() => toggleExpanded(kb.id)}
                         onRename={() => handleRename(kb)}
                         onAddSource={() => handleAddSource(kb.id)}
+                        onUpgrade={() => router.push("/billing")}
                         onDelete={() => handleDeleteKb(kb)}
                         onDeleteSource={(source) => handleDeleteSource(source, kb.id)}
                       />
@@ -368,17 +383,21 @@ export const FilesView = () => {
 function KbRow({
   kb,
   isExpanded,
+  canAddSource,
   onToggle,
   onRename,
   onAddSource,
+  onUpgrade,
   onDelete,
   onDeleteSource,
 }: {
   kb: KnowledgeBase;
   isExpanded: boolean;
+  canAddSource: boolean;
   onToggle: () => void;
   onRename: () => void;
   onAddSource: () => void;
+  onUpgrade: () => void;
   onDelete: () => void;
   onDeleteSource: (source: KnowledgeSource) => void;
 }) {
@@ -416,10 +435,17 @@ function KbRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onAddSource}>
-                <PlusIcon className="size-4 mr-2" />
-                Add Source
-              </DropdownMenuItem>
+              {canAddSource ? (
+                <DropdownMenuItem onClick={onAddSource}>
+                  <PlusIcon className="size-4 mr-2" />
+                  Add Source
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={onUpgrade}>
+                  <ArrowUpRightIcon className="size-4 mr-2" />
+                  Upgrade to add more
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={onRename}>
                 <PenIcon className="size-4 mr-2" />
                 Rename
@@ -481,9 +507,15 @@ function KbRow({
           <TableCell className="px-6 py-3"></TableCell>
           <TableCell className="px-6 py-3 pl-14 text-muted-foreground text-sm" colSpan={5}>
             No sources yet.{" "}
-            <button className="text-primary hover:underline" onClick={onAddSource}>
-              Add one
-            </button>
+            {canAddSource ? (
+              <button className="text-primary hover:underline" onClick={onAddSource}>
+                Add one
+              </button>
+            ) : (
+              <button className="text-primary hover:underline" onClick={onUpgrade}>
+                Upgrade to add sources
+              </button>
+            )}
           </TableCell>
         </TableRow>
       )}

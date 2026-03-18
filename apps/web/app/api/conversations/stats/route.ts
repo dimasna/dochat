@@ -10,11 +10,21 @@ export async function GET(req: NextRequest) {
     }
 
     const agentId = req.nextUrl.searchParams.get("agentId");
+
+    // Get playground conversation IDs to exclude.
+    // Prisma's NOT + JSON path doesn't work through relation filters.
+    const playgroundConvs = await prisma.conversation.findMany({
+      where: {
+        orgId,
+        contactSession: { metadata: { path: ["isPlayground"], equals: true } },
+      },
+      select: { id: true },
+    });
+    const playgroundIds = playgroundConvs.map((c) => c.id);
+
     const where: Record<string, unknown> = {
       orgId,
-      contactSession: {
-        NOT: { metadata: { path: ["isPlayground"], equals: true } },
-      },
+      ...(playgroundIds.length > 0 ? { id: { notIn: playgroundIds } } : {}),
     };
     if (agentId) where.agentId = agentId;
 

@@ -1,5 +1,5 @@
 import { prisma } from "@dochat/db";
-import { getPlanLimits } from "./plans";
+import { getPlanLimits, normalizePlanName } from "./plans";
 
 export class LimitError extends Error {
   status = 403;
@@ -8,14 +8,35 @@ export class LimitError extends Error {
   }
 }
 
-async function getOrgPlan(orgId: string) {
-  const sub = await prisma.subscription.findUnique({ where: { orgId } });
-  return sub?.plan ?? "free";
+/**
+ * Returns conversation IDs for playground sessions in an org.
+ * Prisma's NOT + JSON path doesn't work through relation filters,
+ * so we query playground sessions directly and exclude by ID.
+ */
+async function getPlaygroundConversationIds(orgId: string) {
+  const playgroundConversations = await prisma.conversation.findMany({
+    where: {
+      orgId,
+      contactSession: { metadata: { path: ["isPlayground"], equals: true } },
+    },
+    select: { id: true },
+  });
+  return playgroundConversations.map((c) => c.id);
+}
+
+async function getOrgSubscription(orgId: string) {
+  return prisma.subscription.findUnique({ where: { orgId } });
+}
+
+function getCreditPeriodStart(sub: { currentPeriodStart: Date | null } | null) {
+  if (sub?.currentPeriodStart) return sub.currentPeriodStart;
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
 export async function checkAgentLimit(orgId: string) {
-  const plan = await getOrgPlan(orgId);
-  const limits = getPlanLimits(plan);
+  const sub = await getOrgSubscription(orgId);
+  const limits = getPlanLimits(sub?.plan ?? "free");
   if (limits.maxAgents === Infinity) return;
 
   const count = await prisma.agent.count({ where: { orgId } });
@@ -27,8 +48,8 @@ export async function checkAgentLimit(orgId: string) {
 }
 
 export async function checkKbLimit(orgId: string) {
-  const plan = await getOrgPlan(orgId);
-  const limits = getPlanLimits(plan);
+  const sub = await getOrgSubscription(orgId);
+  const limits = getPlanLimits(sub?.plan ?? "free");
   if (limits.maxKnowledgeBases === Infinity) return;
 
   const count = await prisma.knowledgeBase.count({ where: { orgId } });
@@ -40,8 +61,8 @@ export async function checkKbLimit(orgId: string) {
 }
 
 export async function checkSourceLimit(orgId: string, kbId: string) {
-  const plan = await getOrgPlan(orgId);
-  const limits = getPlanLimits(plan);
+  const sub = await getOrgSubscription(orgId);
+  const limits = getPlanLimits(sub?.plan ?? "free");
   if (limits.maxSourcesPerKb === Infinity) return;
 
   const count = await prisma.knowledgeSource.count({
@@ -55,22 +76,22 @@ export async function checkSourceLimit(orgId: string, kbId: string) {
 }
 
 export async function checkMessageCreditLimit(orgId: string) {
-  const plan = await getOrgPlan(orgId);
-  const limits = getPlanLimits(plan);
+  const sub = await getOrgSubscription(orgId);
+  const limits = getPlanLimits(sub?.plan ?? "free");
   if (limits.maxMessageCreditsPerMonth === Infinity) return;
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodStart = getCreditPeriodStart(sub);
+  const playgroundConvIds = await getPlaygroundConversationIds(orgId);
 
   const count = await prisma.message.count({
     where: {
       role: "assistant",
-      createdAt: { gte: startOfMonth },
+      createdAt: { gte: periodStart },
       conversation: {
         orgId,
-        contactSession: {
-          NOT: { metadata: { path: ["isPlayground"], equals: true } },
-        },
+        ...(playgroundConvIds.length > 0
+          ? { id: { notIn: playgroundConvIds } }
+          : {}),
       },
     },
   });
@@ -82,11 +103,12 @@ export async function checkMessageCreditLimit(orgId: string) {
 }
 
 export async function getOrgUsage(orgId: string) {
-  const plan = await getOrgPlan(orgId);
+  const sub = await getOrgSubscription(orgId);
+  const plan = normalizePlanName(sub?.plan ?? "free");
   const limits = getPlanLimits(plan);
 
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodStart = getCreditPeriodStart(sub);
+  const playgroundConvIds = await getPlaygroundConversationIds(orgId);
 
   const [agents, knowledgeBases, messageCreditsThisMonth] = await Promise.all([
     prisma.agent.count({ where: { orgId } }),
@@ -94,12 +116,12 @@ export async function getOrgUsage(orgId: string) {
     prisma.message.count({
       where: {
         role: "assistant",
-        createdAt: { gte: startOfMonth },
+        createdAt: { gte: periodStart },
         conversation: {
           orgId,
-          contactSession: {
-            NOT: { metadata: { path: ["isPlayground"], equals: true } },
-          },
+          ...(playgroundConvIds.length > 0
+            ? { id: { notIn: playgroundConvIds } }
+            : {}),
         },
       },
     }),

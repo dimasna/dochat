@@ -7,6 +7,7 @@ vi.mock("@dochat/db", () => ({
     knowledgeBase: { count: vi.fn() },
     knowledgeSource: { count: vi.fn() },
     message: { count: vi.fn() },
+    conversation: { findMany: vi.fn() },
   },
 }));
 
@@ -22,6 +23,8 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no playground conversations
+  vi.mocked(prisma.conversation.findMany).mockResolvedValue([]);
 });
 
 function mockPlan(plan: string) {

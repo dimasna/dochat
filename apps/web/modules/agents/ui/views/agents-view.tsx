@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import {
+  ArrowUpRightIcon,
   BotIcon,
   Loader2Icon,
   MoreHorizontalIcon,
@@ -20,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { CreateAgentDialog } from "../components/create-agent-dialog";
 import { useOrgEvents } from "@/hooks/use-org-events";
+import { usePlanLimits } from "@/hooks/use-plan-limits";
 import { useSetAtom } from "jotai/react";
 import { activeAgentIdAtom } from "@/modules/dashboard/atoms";
 import { formatDistanceToNow } from "date-fns";
@@ -43,6 +45,7 @@ export const AgentsView = () => {
   const router = useRouter();
   const setActiveAgentId = useSetAtom(activeAgentIdAtom);
   const [createOpen, setCreateOpen] = useState(false);
+  const { canCreateAgent } = usePlanLimits();
 
   const { data: agents = [], isLoading } = useQuery<AgentItem[]>({
     queryKey: ["agents"],
@@ -91,10 +94,17 @@ export const AgentsView = () => {
           {/* Header */}
           <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold">Agents</h1>
-            <Button onClick={() => setCreateOpen(true)}>
-              <PlusIcon className="size-4 mr-2" />
-              New AI agent
-            </Button>
+            {canCreateAgent ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <PlusIcon className="size-4 mr-2" />
+                New AI agent
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => router.push("/billing")}>
+                <ArrowUpRightIcon className="size-4 mr-2" />
+                Upgrade to add more
+              </Button>
+            )}
           </div>
 
           {/* Agent Cards Grid */}
@@ -112,13 +122,24 @@ export const AgentsView = () => {
                 <p className="text-muted-foreground text-sm mt-1">
                   Create your first AI agent to get started
                 </p>
-                <Button
-                  className="mt-4"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon className="size-4 mr-2" />
-                  New AI agent
-                </Button>
+                {canCreateAgent ? (
+                  <Button
+                    className="mt-4"
+                    onClick={() => setCreateOpen(true)}
+                  >
+                    <PlusIcon className="size-4 mr-2" />
+                    New AI agent
+                  </Button>
+                ) : (
+                  <Button
+                    className="mt-4"
+                    variant="outline"
+                    onClick={() => router.push("/billing")}
+                  >
+                    <ArrowUpRightIcon className="size-4 mr-2" />
+                    Upgrade to add more
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">

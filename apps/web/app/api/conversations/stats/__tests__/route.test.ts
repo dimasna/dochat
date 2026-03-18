@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 
 vi.mock("@dochat/db", () => ({
   prisma: {
-    conversation: { count: vi.fn() },
+    conversation: { count: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -18,6 +18,8 @@ import { GET } from "../route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no playground conversations to exclude
+  vi.mocked(prisma.conversation.findMany).mockResolvedValue([]);
 });
 
 describe("GET /api/conversations/stats", () => {

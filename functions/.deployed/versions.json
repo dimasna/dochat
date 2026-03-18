@@ -1,0 +1,18 @@
+[
+  {
+    "apihost": "https://faas-nyc1-2ef2e6cc.doserverless.co",
+    "namespace": "fn-6ace720e-37ee-483a-92c0-694dc0324a99",
+    "packageVersions": {
+      "cron": {
+        "version": "0.0.2",
+        "digest": "7e16ea5a7702ce50b0e46f9a2154f881c3675a78334a4b1ad40a2cd757527f90"
+      }
+    },
+    "actionVersions": {
+      "cron/health-check": {
+        "version": "0.0.2",
+        "digest": "1d13147ac6db4589561850a4d290dd82d725db4a327c0003366e04b3fa723246"
+      }
+    }
+  }
+]

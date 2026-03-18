@@ -33,7 +33,7 @@ export const BillingView = () => {
   });
 
   return (
-    <div className="flex min-h-screen flex-col bg-background p-8">
+    <div className="flex flex-col bg-background p-8 pb-24">
       <div className="mx-auto w-full max-w-screen-xl">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold">Plans & Billing</h1>

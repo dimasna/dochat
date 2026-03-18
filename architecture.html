@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dochat Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0f1e;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    h1 {
+      font-size: 2.4rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      background: linear-gradient(135deg, #0069FF, #6c63ff, #00c4b4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      font-size: 1.05rem;
+      color: #94a3b8;
+      margin-bottom: 40px;
+    }
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-top: 56px;
+      margin-bottom: 16px;
+      color: #cbd5e1;
+    }
+    .section-desc {
+      font-size: 0.9rem;
+      color: #64748b;
+      margin-bottom: 24px;
+      max-width: 800px;
+      text-align: center;
+    }
+    .mermaid {
+      width: 100%;
+      max-width: 1200px;
+    }
+    .legend {
+      margin-top: 32px;
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    .legend-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    .tech-badges {
+      margin-top: 40px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .badge {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      border: 1px solid #1e293b;
+      background: #0f172a;
+      color: #94a3b8;
+    }
+    .badge.do { border-color: #0069FF44; color: #60a5fa; }
+    .badge.core { border-color: #6c63ff44; color: #a78bfa; }
+    .badge.infra { border-color: #0d948844; color: #5eead4; }
+    .footer {
+      margin-top: 40px;
+      font-size: 0.8rem;
+      color: #475569;
+    }
+    hr {
+      width: 100%;
+      max-width: 1200px;
+      border: none;
+      border-top: 1px solid #1e293b;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dochat &mdash; Architecture</h1>
+  <p class="subtitle">AI-powered customer support agents for your business &bull; Built on DigitalOcean</p>
+
+  <!-- ===== DIAGRAM 1: System Overview ===== -->
+  <p class="section-title">System Overview</p>
+  <p class="section-desc">High-level view of how Dochat's components connect across DigitalOcean's platform</p>
+
+  <div class="mermaid">
+flowchart TB
+  subgraph USERS["&nbsp;&nbsp;Users&nbsp;&nbsp;"]
+    direction LR
+    BIZ["<b>Business Owner</b><br/>Dashboard &bull; Settings"]
+    END_USER["<b>Website Visitor</b><br/>Embedded Chat Widget"]
+  end
+
+  subgraph DO_APP["&nbsp;&nbsp;DigitalOcean App Platform&nbsp;&nbsp;"]
+    direction TB
+    subgraph WEB_SVC["&nbsp;&nbsp;Web Service &mdash; Next.js 15&nbsp;&nbsp;"]
+      direction TB
+      DASH["Dashboard UI<br/><i>React 19 &bull; TanStack Query &bull; Jotai</i>"]
+      API["REST API Layer<br/><i>/api/agents &bull; /api/conversations<br/>/api/knowledge-bases &bull; /api/billing<br/>/api/embed/* &bull; /api/cron/*</i>"]
+      LIB["Core Business Logic<br/><i>Agent provisioning &bull; KB lifecycle<br/>Plan limits &bull; Health checks &bull; EventBus</i>"]
+      DASH --> API
+      API --> LIB
+    end
+
+    subgraph WIDGET_SVC["&nbsp;&nbsp;Widget Service &mdash; Next.js 15&nbsp;&nbsp;"]
+      direction TB
+      EMBED["Embed Script<br/><i>widget.js &bull; esbuild IIFE bundle</i>"]
+      CHAT_UI["Chat Interface<br/><i>iframe-isolated &bull; Themed &bull; React</i>"]
+      EMBED --> CHAT_UI
+    end
+  end
+
+  subgraph DO_GENAI["&nbsp;&nbsp;DigitalOcean GenAI Platform&nbsp;&nbsp;"]
+    direction TB
+    AGENTS_API["AI Agents<br/><i>LLM chat completions<br/>Access keys &bull; Visibility control</i>"]
+    KB_API["Knowledge Bases<br/><i>RAG retrieval &bull; OpenSearch<br/>File, Web, Text datasources</i>"]
+    IDX["Indexing Pipeline<br/><i>Async jobs &bull; Status polling</i>"]
+    AGENTS_API <--> KB_API
+    KB_API --> IDX
+  end
+
+  subgraph DATA["&nbsp;&nbsp;Data Layer&nbsp;&nbsp;"]
+    direction LR
+    PRISMA["Prisma ORM<br/><i>@dochat/db package</i>"]
+    PG[("PostgreSQL<br/><i>DO Managed DB</i>")]
+    PRISMA --> PG
+  end
+
+  subgraph SERVICES["&nbsp;&nbsp;Third-Party Services&nbsp;&nbsp;"]
+    direction LR
+    CLERK["Clerk<br/><i>Auth &bull; Organizations</i>"]
+    DODO["DodoPayments<br/><i>Subscriptions &bull; Webhooks</i>"]
+  end
+
+  EXTERNAL_SITE["<b>Customer's Website</b><br/>&lt;script&gt; tag embed"]
+
+  BIZ --> DASH
+  END_USER --> EXTERNAL_SITE
+  EXTERNAL_SITE -- "loads widget.js" --> EMBED
+  CHAT_UI -- "sessions, chat,<br/>config" --> API
+  LIB -- "provision agents,<br/>manage KBs,<br/>chat completions" --> DO_GENAI
+  LIB --> PRISMA
+  API --> CLERK
+  API --> DODO
+
+  classDef doBlue fill:#0069FF,stroke:#0050cc,color:#fff,font-weight:bold
+  classDef doGenai fill:#6c63ff,stroke:#5549e0,color:#fff,font-weight:bold
+  classDef service fill:#1e293b,stroke:#334155,color:#e2e8f0
+  classDef data fill:#0f766e,stroke:#0d9488,color:#fff,font-weight:bold
+  classDef user fill:#1e3a5f,stroke:#3b82f6,color:#e2e8f0,font-weight:bold
+  classDef thirdparty fill:#4a1d6a,stroke:#7c3aed,color:#e2e8f0
+  classDef external fill:#1a1a2e,stroke:#e2e8f0,color:#e2e8f0,stroke-dasharray:5 5
+
+  class WEB_SVC,WIDGET_SVC doBlue
+  class DO_GENAI,AGENTS_API,KB_API,IDX doGenai
+  class DASH,API,LIB,EMBED,CHAT_UI service
+  class PG,PRISMA data
+  class BIZ,END_USER user
+  class CLERK,DODO thirdparty
+  class EXTERNAL_SITE external
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#0069FF"></div>DO App Platform</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#6c63ff"></div>DO GenAI Platform</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0f766e"></div>DO Managed Database</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a1d6a"></div>Third-Party Services</div>
+  </div>
+
+  <hr>
+
+  <!-- ===== DIAGRAM 2: Agent Lifecycle ===== -->
+  <p class="section-title">Agent Lifecycle</p>
+  <p class="section-desc">How agents are provisioned, linked to knowledge bases, and kept healthy on DigitalOcean GenAI</p>
+
+  <div class="mermaid">
+flowchart LR
+  CREATE["Create Agent<br/><i>POST /v2/gen-ai/agents</i>"]
+  WAIT_DEPLOY["Wait for Deployment<br/><i>Poll status</i>"]
+  GEN_KEY["Generate Access Key<br/><i>POST /access_keys</i>"]
+  SET_VIS["Set Visibility<br/><i>PUT /deployment_visibility</i>"]
+  ACTIVE["Agent Active<br/><i>Ready for chat</i>"]
+  HEALTH["Health Check Cron<br/><i>Ping endpoint</i>"]
+  RECOVER["Auto-Recovery<br/><i>Delete &amp; recreate</i>"]
+
+  CREATE --> WAIT_DEPLOY --> GEN_KEY --> SET_VIS --> ACTIVE
+  ACTIVE --> HEALTH
+  HEALTH -- "healthy" --> ACTIVE
+  HEALTH -- "unhealthy" --> RECOVER --> CREATE
+
+  classDef step fill:#1e293b,stroke:#334155,color:#e2e8f0
+  classDef active fill:#0f766e,stroke:#0d9488,color:#fff,font-weight:bold
+  classDef warn fill:#92400e,stroke:#d97706,color:#fff,font-weight:bold
+
+  class CREATE,WAIT_DEPLOY,GEN_KEY,SET_VIS,HEALTH step
+  class ACTIVE active
+  class RECOVER warn
+  </div>
+
+  <hr>
+
+  <!-- ===== DIAGRAM 3: Knowledge Base Flow ===== -->
+  <p class="section-title">Knowledge Base Lifecycle</p>
+  <p class="section-desc">Async KB creation, datasource ingestion, and the agent rebuild required for KB linking</p>
+
+  <div class="mermaid">
+flowchart LR
+  CREATE_KB["Create KB<br/><i>POST /knowledge_bases</i>"]
+  WAIT_DB["Wait for DB Ready<br/><i>~7 min provisioning</i>"]
+  ADD_SRC["Add Datasources<br/><i>Files &bull; Websites &bull; Text</i>"]
+  INDEX["Trigger Indexing<br/><i>POST /indexing_jobs</i>"]
+  WAIT_IDX["Wait for Completion<br/><i>Poll indexing status</i>"]
+  READY["KB Indexed<br/><i>Ready for use</i>"]
+  REBUILD["Rebuild Agent<br/><i>Delete old &rarr; Create new<br/>with knowledge_base_uuid</i>"]
+
+  CREATE_KB --> WAIT_DB --> ADD_SRC --> INDEX --> WAIT_IDX --> READY --> REBUILD
+
+  classDef step fill:#1e293b,stroke:#334155,color:#e2e8f0
+  classDef wait fill:#312e81,stroke:#4f46e5,color:#e2e8f0
+  classDef done fill:#0f766e,stroke:#0d9488,color:#fff,font-weight:bold
+
+  class CREATE_KB,ADD_SRC,INDEX,REBUILD step
+  class WAIT_DB,WAIT_IDX wait
+  class READY done
+  </div>
+
+  <hr>
+
+  <!-- ===== DIAGRAM 4: Chat Message Flow ===== -->
+  <p class="section-title">Chat Message Flow</p>
+  <p class="section-desc">End-to-end message flow from visitor widget to AI agent with escalation support</p>
+
+  <div class="mermaid">
+sequenceDiagram
+  participant V as Website Visitor
+  participant W as Chat Widget
+  participant A as API Routes
+  participant DB as PostgreSQL
+  participant AI as DO GenAI Agent
+
+  V->>W: Types message
+  W->>A: POST /api/embed/session
+  A->>DB: Create/find ContactSession
+  A-->>W: Session token
+
+  W->>A: POST /api/embed/chat
+  A->>DB: Create Conversation (lazy)
+  A->>DB: Save user message
+  A->>AI: Chat completion (last 20 msgs)
+  AI-->>A: AI response
+
+  alt Normal Response
+    A->>DB: Save assistant message
+    A-->>W: Display response
+  end
+
+  alt Escalation Detected
+    A->>DB: Mark conversation ESCALATED
+    A->>DB: Save escalation message
+    A-->>W: Display escalation notice
+    Note over A,DB: Human operator can now respond<br/>via dashboard
+  end
+
+  alt Resolution Detected
+    A->>DB: Mark conversation RESOLVED
+    A-->>W: Display resolution
+  end
+  </div>
+
+  <hr>
+
+  <!-- ===== DIAGRAM 5: Billing Flow ===== -->
+  <p class="section-title">Billing &amp; Subscription Flow</p>
+  <p class="section-desc">Multi-tier plans with message credits, enforced limits, and webhook-driven subscription management</p>
+
+  <div class="mermaid">
+flowchart LR
+  subgraph PLANS["&nbsp;&nbsp;Subscription Tiers&nbsp;&nbsp;"]
+    direction TB
+    FREE["<b>Free</b><br/>1 agent &bull; 100 msgs/mo"]
+    STARTER["<b>Starter</b><br/>2 agents &bull; 2K msgs/mo"]
+    GROWTH["<b>Growth</b><br/>5 agents &bull; 10K msgs/mo"]
+    SCALE["<b>Scale</b><br/>15 agents &bull; 40K msgs/mo"]
+    ENT["<b>Enterprise</b><br/>Unlimited"]
+  end
+
+  CHECKOUT["Checkout Session<br/><i>DodoPayments</i>"]
+  WEBHOOK["Webhook<br/><i>POST /api/webhooks/dodo</i>"]
+  UPDATE_DB["Update Subscription<br/><i>Plan &bull; Status &bull; Period</i>"]
+  ENFORCE["Enforce Limits<br/><i>Agents &bull; KBs &bull; Sources<br/>Messages per month</i>"]
+
+  PLANS --> CHECKOUT --> WEBHOOK --> UPDATE_DB --> ENFORCE
+
+  classDef plan fill:#1e293b,stroke:#334155,color:#e2e8f0
+  classDef flow fill:#4a1d6a,stroke:#7c3aed,color:#e2e8f0
+  classDef enforce fill:#0f766e,stroke:#0d9488,color:#fff,font-weight:bold
+
+  class FREE,STARTER,GROWTH,SCALE,ENT plan
+  class CHECKOUT,WEBHOOK,UPDATE_DB flow
+  class ENFORCE enforce
+  </div>
+
+  <hr>
+
+  <!-- ===== DIAGRAM 6: Monorepo Structure ===== -->
+  <p class="section-title">Monorepo Structure</p>
+  <p class="section-desc">Turborepo-powered monorepo with shared packages for maximum code reuse</p>
+
+  <div class="mermaid">
+flowchart TB
+  subgraph MONO["&nbsp;&nbsp;dochat/ &mdash; Turborepo + pnpm&nbsp;&nbsp;"]
+    direction TB
+
+    subgraph APPS["&nbsp;&nbsp;Apps&nbsp;&nbsp;"]
+      direction LR
+      WEB["<b>apps/web</b><br/>Dashboard &bull; API<br/><i>Next.js 15 &bull; Standalone</i>"]
+      WIDG["<b>apps/widget</b><br/>Embeddable Chat<br/><i>Next.js 15 &bull; esbuild</i>"]
+    end
+
+    subgraph PKGS["&nbsp;&nbsp;Packages&nbsp;&nbsp;"]
+      direction LR
+      DB_PKG["<b>@dochat/db</b><br/>Prisma schema &bull; Client<br/>Migrations"]
+      UI_PKG["<b>@workspace/ui</b><br/>Shadcn components<br/>Shared UI"]
+      SHARED_PKG["<b>@dochat/shared</b><br/>Constants &bull; Types<br/>Agent prompts"]
+    end
+
+    WEB --> DB_PKG
+    WEB --> UI_PKG
+    WEB --> SHARED_PKG
+    WIDG --> UI_PKG
+    WIDG --> SHARED_PKG
+  end
+
+  classDef app fill:#0069FF,stroke:#0050cc,color:#fff,font-weight:bold
+  classDef pkg fill:#1e293b,stroke:#6c63ff,color:#e2e8f0
+
+  class WEB,WIDG app
+  class DB_PKG,UI_PKG,SHARED_PKG pkg
+  </div>
+
+  <div class="tech-badges">
+    <span class="badge do">DigitalOcean App Platform</span>
+    <span class="badge do">DigitalOcean GenAI</span>
+    <span class="badge do">DO Managed PostgreSQL</span>
+    <span class="badge core">Next.js 15</span>
+    <span class="badge core">React 19</span>
+    <span class="badge core">TypeScript</span>
+    <span class="badge infra">Prisma ORM</span>
+    <span class="badge infra">Turborepo</span>
+    <span class="badge infra">Tailwind CSS</span>
+    <span class="badge infra">Clerk Auth</span>
+    <span class="badge infra">Vitest</span>
+    <span class="badge infra">esbuild</span>
+  </div>
+
+  <p class="footer">Dochat &mdash; DigitalOcean Hackathon 2025</p>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        primaryColor: '#0069FF',
+        primaryTextColor: '#e2e8f0',
+        primaryBorderColor: '#334155',
+        lineColor: '#64748b',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a',
+        fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
+        fontSize: '14px',
+        noteBkgColor: '#1e293b',
+        noteTextColor: '#e2e8f0',
+        noteBorderColor: '#334155',
+        actorBkg: '#1e293b',
+        actorTextColor: '#e2e8f0',
+        actorBorder: '#334155',
+        signalColor: '#64748b',
+        signalTextColor: '#e2e8f0',
+      },
+      flowchart: {
+        curve: 'basis',
+        padding: 20,
+        htmlLabels: true,
+        useMaxWidth: true,
+      },
+      sequence: {
+        useMaxWidth: true,
+        actorMargin: 80,
+        messageMargin: 40,
+      },
+    });
+  </script>
+</body>
+</html>

@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
         case "subscription.plan_changed": {
           await prisma.subscription.updateMany({
             where: { dodoSubscriptionId: sub.subscription_id },
-            data: { plan: sub.metadata?.plan ?? "pro" },
+            data: { plan: sub.metadata?.plan ?? "starter" },
           });
           break;
         }

@@ -5,6 +5,7 @@ vi.mock("@dochat/db", () => ({
   prisma: {
     contactSession: { findUnique: vi.fn() },
     conversation: { findUnique: vi.fn(), update: vi.fn() },
+    agent: { findUnique: vi.fn() },
     subscription: { findUnique: vi.fn() },
     message: { create: vi.fn() },
   },
@@ -121,6 +122,9 @@ describe("POST /api/embed/chat", () => {
       id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
       status: "unresolved",
     } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: true,
+    } as never);
     vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
       status: "active",
     } as never);
@@ -154,6 +158,9 @@ describe("POST /api/embed/chat", () => {
       id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
       status: "escalated",
     } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: true,
+    } as never);
     vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
       status: "active",
     } as never);
@@ -179,6 +186,9 @@ describe("POST /api/embed/chat", () => {
       id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
       status: "unresolved",
     } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: true,
+    } as never);
     vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
       status: "cancelled",
     } as never);
@@ -203,6 +213,9 @@ describe("POST /api/embed/chat", () => {
     vi.mocked(prisma.conversation.findUnique).mockResolvedValue({
       id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
       status: "unresolved",
+    } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: true,
     } as never);
     vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
       status: "active",
@@ -234,6 +247,9 @@ describe("POST /api/embed/chat", () => {
     vi.mocked(prisma.conversation.findUnique).mockResolvedValue({
       id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
       status: "unresolved",
+    } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: true,
     } as never);
     vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
       status: "active",
