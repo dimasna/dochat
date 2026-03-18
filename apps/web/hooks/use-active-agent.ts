@@ -11,6 +11,7 @@ interface Agent {
   status: string;
   description: string | null;
   isPublic: boolean;
+  voiceId: string | null;
 }
 
 export function useActiveAgent() {

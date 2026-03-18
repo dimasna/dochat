@@ -102,4 +102,26 @@ export const api = {
   getMessagesStreamUrl: (conversationId: string, sessionToken: string) => {
     return `${API_BASE}/api/embed/conversations/${conversationId}/messages/stream?sessionToken=${sessionToken}`;
   },
+
+  transcribeAudio: async (audio: Blob, sessionToken: string) => {
+    const formData = new FormData();
+    formData.append("audio", audio, "recording.webm");
+    formData.append("sessionToken", sessionToken);
+    const res = await fetch(`${API_BASE}/api/embed/voice/transcribe`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Transcription failed");
+    return res.json() as Promise<{ text: string }>;
+  },
+
+  synthesizeSpeech: async (text: string, agentId: string, sessionToken: string) => {
+    const res = await fetch(`${API_BASE}/api/embed/voice/synthesize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, agentId, sessionToken }),
+    });
+    if (!res.ok) throw new Error("Synthesis failed");
+    return res.arrayBuffer();
+  },
 };

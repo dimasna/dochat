@@ -11,6 +11,7 @@ export interface WidgetSettingsData {
   suggestion3: string | null;
   themeColor: string | null;
   widgetLogo: string | null;
+  voiceEnabled: boolean;
 }
 
 export interface ContactSessionData {

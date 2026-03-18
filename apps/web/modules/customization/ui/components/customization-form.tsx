@@ -17,6 +17,7 @@ import {
 import { Input } from "@workspace/ui/components/input";
 import { Separator } from "@workspace/ui/components/separator";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { Switch } from "@workspace/ui/components/switch";
 import { ImageIcon, XIcon } from "lucide-react";
 import { FormSchema } from "../../types";
 import { widgetSettingsSchema } from "../../schemas";
@@ -28,6 +29,7 @@ interface WidgetSettings {
   suggestion3?: string | null;
   themeColor?: string | null;
   widgetLogo?: string | null;
+  voiceEnabled?: boolean;
 }
 
 interface CustomizationFormProps {
@@ -52,6 +54,7 @@ export const CustomizationForm = ({
       },
       themeColor: initialData?.themeColor || "",
       widgetLogo: initialData?.widgetLogo || "",
+      voiceEnabled: initialData?.voiceEnabled || false,
     },
   });
 
@@ -68,6 +71,7 @@ export const CustomizationForm = ({
           suggestion3: values.defaultSuggestions.suggestion3 || null,
           themeColor: values.themeColor || null,
           widgetLogo: values.widgetLogo || null,
+          voiceEnabled: values.voiceEnabled || false,
         }),
       });
 
@@ -273,6 +277,32 @@ export const CustomizationForm = ({
                 </div>
               </div>
             </div>
+
+            <Separator />
+
+            <FormField
+              control={form.control}
+              name="voiceEnabled"
+              render={({ field }) => (
+                <FormItem>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <FormLabel>Voice Chat</FormLabel>
+                      <FormDescription>
+                        Allow visitors to use voice input and hear voice responses
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
         <div className="flex justify-end">
           <Button disabled={form.formState.isSubmitting} type="submit">

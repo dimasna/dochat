@@ -58,6 +58,7 @@ describe("provisionAgent", () => {
       description: null,
       instruction: "You are a support agent.",
       isPublic: false,
+      voiceId: null,
       status: "provisioning",
       createdAt: new Date(),
       updatedAt: new Date(),

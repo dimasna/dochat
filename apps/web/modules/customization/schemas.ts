@@ -9,4 +9,5 @@ export const widgetSettingsSchema = z.object({
   }),
   themeColor: z.string().optional(),
   widgetLogo: z.string().optional(),
+  voiceEnabled: z.boolean().optional(),
 });

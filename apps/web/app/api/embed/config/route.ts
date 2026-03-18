@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
       suggestion3: settings.suggestion3,
       themeColor: settings.themeColor,
       widgetLogo: settings.widgetLogo,
+      voiceEnabled: settings.voiceEnabled,
     },
     { headers: corsHeaders },
   );

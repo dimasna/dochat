@@ -37,6 +37,7 @@ model Agent {
   description     String?
   instruction     String?  @db.Text // Custom system prompt per agent
   isPublic        Boolean  @default(false) // Whether the agent endpoint is publicly accessible
+  voiceId         String?  // Chatterbox voice library ID for TTS cloning
   status          String   @default("provisioning") // provisioning, active, failed
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -60,6 +61,7 @@ model WidgetSettings {
   suggestion3     String?
   themeColor      String?  // Hex color for widget theme (e.g. "#3b82f6")
   widgetLogo      String?  // Base64 data URL for custom widget logo
+  voiceEnabled    Boolean  @default(false) // Whether voice input/output is enabled in widget
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

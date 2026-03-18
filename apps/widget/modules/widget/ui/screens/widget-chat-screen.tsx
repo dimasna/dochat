@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@workspace/ui/components/button";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ClockIcon, MessageSquareTextIcon, MoreHorizontalIcon, SquarePenIcon, UserIcon, XIcon } from "lucide-react";
+import { ClockIcon, MessageSquareTextIcon, MoreHorizontalIcon, SquarePenIcon, UserIcon, XIcon, Volume2Icon } from "lucide-react";
 import { agentIdAtom, contactSessionAtomFamily, conversationIdAtom, organizationIdAtom, widgetSettingsAtom } from "../../atoms/widget-atoms";
 import { Form, FormField } from "@workspace/ui/components/form";
 import {
@@ -29,9 +29,12 @@ import {
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
 import { ConversationStatusIcon } from "@workspace/ui/components/conversation-status-icon";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
+import { AIVoiceButton } from "@workspace/ui/components/ai/voice-button";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { useVoicePlayer } from "@/hooks/use-voice-player";
 
 interface MessageData {
   id: string;
@@ -81,6 +84,13 @@ export const WidgetChatScreen = () => {
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [isMultiline, setIsMultiline] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+
+  // Voice
+  const voiceRecorder = useVoiceRecorder();
+  const voicePlayer = useVoicePlayer();
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const voiceEnabled = widgetSettings?.voiceEnabled && voiceRecorder.isSupported;
+  const isVoiceModeRef = useRef(!!voiceEnabled);
 
   // Combined messages: local greeting (when no conversation yet) + real messages
   const displayMessages = useMemo(() => {
@@ -157,6 +167,9 @@ export const WidgetChatScreen = () => {
         } else if (data.type === "message") {
           if (data.message.role === "assistant" || data.message.role === "support") {
             setIsTyping(false);
+            if (isVoiceModeRef.current && data.message.content) {
+              synthesizeRef.current(data.message.content);
+            }
           }
           setMessages((prev) => {
             // Deduplicate and replace optimistic temp messages
@@ -190,6 +203,42 @@ export const WidgetChatScreen = () => {
       message: "",
     },
   });
+
+  const handleSynthesizeAndPlay = useCallback(async (text: string) => {
+    if (!contactSession?.sessionToken || !agentId) return;
+    try {
+      const audioBuffer = await api.synthesizeSpeech(text, agentId, contactSession.sessionToken);
+      await voicePlayer.play(audioBuffer);
+    } catch {
+      // Silently fail — text is still visible
+    }
+  }, [contactSession?.sessionToken, agentId, voicePlayer]);
+
+  const synthesizeRef = useRef(handleSynthesizeAndPlay);
+  useEffect(() => { synthesizeRef.current = handleSynthesizeAndPlay; }, [handleSynthesizeAndPlay]);
+
+  const handleVoiceRecord = async () => {
+    if (!contactSession?.sessionToken) return;
+    if (voiceRecorder.isRecording) {
+      const blob = await voiceRecorder.stopRecording();
+      if (!blob) return;
+
+      setIsTranscribing(true);
+      try {
+        const { text } = await api.transcribeAudio(blob, contactSession.sessionToken);
+        if (text?.trim()) {
+          form.setValue("message", text.trim(), { shouldValidate: true });
+          form.handleSubmit(onSubmit)();
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setIsTranscribing(false);
+      }
+    } else {
+      await voiceRecorder.startRecording();
+    }
+  };
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     if (!contactSession?.sessionToken) return;
@@ -332,6 +381,16 @@ export const WidgetChatScreen = () => {
                         </span>
                       )}
                       <AIResponse>{message.content}</AIResponse>
+                      {voiceEnabled && message.role !== "user" && message.id !== "greeting" && (
+                        <button
+                          type="button"
+                          className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => handleSynthesizeAndPlay(message.content)}
+                        >
+                          <Volume2Icon className="size-3" />
+                          <span>{voicePlayer.isPlaying ? "Playing..." : "Play"}</span>
+                        </button>
+                      )}
                     </AIMessageContent>
                   </AIMessage>
                 );
@@ -408,6 +467,14 @@ export const WidgetChatScreen = () => {
                 />
               )}
             />
+            {voiceEnabled && (
+              <AIVoiceButton
+                isRecording={voiceRecorder.isRecording}
+                isProcessing={isTranscribing}
+                onClick={handleVoiceRecord}
+                disabled={conversationStatus === "resolved"}
+              />
+            )}
             <AIInputSubmit
               className="size-8 rounded-xl"
               disabled={conversationStatus === "resolved" || !form.formState.isValid}

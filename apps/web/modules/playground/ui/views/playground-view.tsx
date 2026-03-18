@@ -10,6 +10,9 @@ import {
   TrashIcon,
   FolderIcon,
   MoreHorizontalIcon,
+  Volume2Icon,
+  UploadIcon,
+  XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -41,8 +44,12 @@ import {
   AIInputTextarea,
   AIInputSubmit,
 } from "@workspace/ui/components/ai/input";
+import { AIVoiceButton } from "@workspace/ui/components/ai/voice-button";
+import { Switch } from "@workspace/ui/components/switch";
 import { Form, FormField } from "@workspace/ui/components/form";
 
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
+import { useVoicePlayer } from "@/hooks/use-voice-player";
 import { CustomizationForm } from "@/modules/customization/ui/components/customization-form";
 import { createScript } from "@/modules/integrations/utils";
 import {
@@ -97,6 +104,7 @@ interface AgentDetail {
   name: string;
   description: string | null;
   instruction: string | null;
+  voiceId: string | null;
   status: string;
   knowledgeBases: AgentKb[];
   _count: { conversations: number };
@@ -158,6 +166,14 @@ export const PlaygroundView = () => {
 
   const isProvisioning = agentDetail?.status === "provisioning";
 
+  // --- Voice ---
+  const voiceRecorder = useVoiceRecorder();
+  const voicePlayer = useVoicePlayer();
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+  const voiceFileRef = useRef<HTMLInputElement>(null);
+
   // Sync local state when server data loads or changes
   useEffect(() => {
     if (agentDetail) {
@@ -193,6 +209,85 @@ export const PlaygroundView = () => {
       setIsSaving(false);
     }
   };
+
+  const handleUploadVoice = async (file: File) => {
+    if (!activeAgentId) return;
+    setIsUploadingVoice(true);
+    try {
+      const formData = new FormData();
+      formData.append("audio", file);
+      const res = await fetch(`/api/agents/${activeAgentId}/voice`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Failed to upload voice");
+      toast.success("Voice reference uploaded");
+      queryClient.invalidateQueries({ queryKey: ["agent", activeAgentId] });
+    } catch {
+      toast.error("Failed to upload voice reference");
+    } finally {
+      setIsUploadingVoice(false);
+    }
+  };
+
+  const handleRemoveVoice = async () => {
+    if (!activeAgentId) return;
+    try {
+      const res = await fetch(`/api/agents/${activeAgentId}/voice`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to remove voice");
+      toast.success("Voice reference removed");
+      queryClient.invalidateQueries({ queryKey: ["agent", activeAgentId] });
+    } catch {
+      toast.error("Failed to remove voice reference");
+    }
+  };
+
+  const handleVoiceRecord = async () => {
+    if (voiceRecorder.isRecording) {
+      const blob = await voiceRecorder.stopRecording();
+      if (!blob || !sessionToken) return;
+
+      setIsTranscribing(true);
+      try {
+        const formData = new FormData();
+        formData.append("audio", blob, "recording.webm");
+        formData.append("sessionToken", sessionToken);
+        const res = await fetch("/api/embed/voice/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) throw new Error("Transcription failed");
+        const { text } = await res.json();
+        if (text?.trim()) {
+          onSendMessage({ message: text.trim() });
+        }
+      } catch {
+        toast.error("Failed to transcribe audio");
+      } finally {
+        setIsTranscribing(false);
+      }
+    } else {
+      await voiceRecorder.startRecording();
+    }
+  };
+
+  const handleSynthesizeAndPlay = useCallback(async (text: string) => {
+    if (!sessionToken || !activeAgentId) return;
+    try {
+      const res = await fetch("/api/embed/voice/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, agentId: activeAgentId, sessionToken }),
+      });
+      if (!res.ok) return;
+      const audioBuffer = await res.arrayBuffer();
+      await voicePlayer.play(audioBuffer);
+    } catch {
+      // Silently fail — text is still visible
+    }
+  }, [sessionToken, activeAgentId, voicePlayer]);
 
   const handleAttachKb = async (knowledgeBaseId: string) => {
     if (!activeAgentId) return;
@@ -280,6 +375,12 @@ export const PlaygroundView = () => {
   useEffect(() => { cachedConversationId = conversationId; }, [conversationId]);
   useEffect(() => { cachedMessages = messages; }, [messages]);
 
+  // Track voice mode and synthesize fn in refs so SSE callback can access latest values
+  const isVoiceModeRef = useRef(isVoiceMode);
+  useEffect(() => { isVoiceModeRef.current = isVoiceMode; }, [isVoiceMode]);
+  const synthesizeRef = useRef(handleSynthesizeAndPlay);
+  useEffect(() => { synthesizeRef.current = handleSynthesizeAndPlay; }, [handleSynthesizeAndPlay]);
+
   const connectSSE = useCallback((convId: string, token: string) => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -298,6 +399,10 @@ export const PlaygroundView = () => {
         } else if (data.type === "message") {
           if (data.message.role === "assistant" || data.message.role === "support") {
             setIsTyping(false);
+            // Auto-play voice for new assistant messages when voice mode is on
+            if (isVoiceModeRef.current && data.message.content) {
+              synthesizeRef.current(data.message.content);
+            }
           }
           setMessages((prev) => {
             const filtered = prev.filter(
@@ -538,6 +643,57 @@ export const PlaygroundView = () => {
                   </Button>
                 </div>
 
+                {/* Voice Reference */}
+                <Separator />
+                <div className="space-y-2">
+                  <Label>Agent Voice</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Upload a voice sample (5-10 sec WAV/MP3) to clone a custom voice for your agent&apos;s responses.
+                  </p>
+                  {agentDetail.voiceId ? (
+                    <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+                      <Volume2Icon className="size-4 shrink-0 text-primary" />
+                      <span className="flex-1 text-sm">Custom voice active</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        onClick={handleRemoveVoice}
+                        disabled={isProvisioning}
+                      >
+                        <TrashIcon className="size-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <input
+                        ref={voiceFileRef}
+                        type="file"
+                        accept="audio/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadVoice(file);
+                          e.target.value = "";
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => voiceFileRef.current?.click()}
+                        disabled={isUploadingVoice || isProvisioning}
+                      >
+                        {isUploadingVoice ? (
+                          <Loader2Icon className="size-4 animate-spin mr-1.5" />
+                        ) : (
+                          <UploadIcon className="size-4 mr-1.5" />
+                        )}
+                        Upload Voice Sample
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
               </div>
             ) : (
               <p className="text-muted-foreground text-center py-20">Agent not found</p>
@@ -726,16 +882,28 @@ export const PlaygroundView = () => {
               <DicebearAvatar imageUrl={widgetLogo || "/logo.svg"} seed="assistant" size={28} />
               <p className="text-sm font-semibold">{activeAgent?.name ?? "AI Agent"}</p>
             </div>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="text-white hover:bg-white/20 size-8"
-              onClick={initChat}
-              disabled={isInitializing}
-              title="Reset conversation"
-            >
-              <RotateCcwIcon className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {voiceRecorder.isSupported && (
+                <div className="flex items-center gap-1.5 mr-1">
+                  <Switch
+                    checked={isVoiceMode}
+                    onCheckedChange={setIsVoiceMode}
+                    className="scale-75"
+                  />
+                  <span className="text-[10px] opacity-80">Voice</span>
+                </div>
+              )}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="text-white hover:bg-white/20 size-8"
+                onClick={initChat}
+                disabled={isInitializing}
+                title="Reset conversation"
+              >
+                <RotateCcwIcon className="size-4" />
+              </Button>
+            </div>
           </header>
 
           {/* Chat messages */}
@@ -763,6 +931,16 @@ export const PlaygroundView = () => {
                         }
                       >
                         <AIResponse>{message.content}</AIResponse>
+                        {message.role === "assistant" && isVoiceMode && !message.id.startsWith("temp-") && (
+                          <button
+                            type="button"
+                            className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() => handleSynthesizeAndPlay(message.content)}
+                          >
+                            <Volume2Icon className="size-3" />
+                            <span>{voicePlayer.isPlaying ? "Playing..." : "Play"}</span>
+                          </button>
+                        )}
                       </AIMessageContent>
                     </AIMessage>
                   ))}
@@ -831,6 +1009,14 @@ export const PlaygroundView = () => {
                     />
                   )}
                 />
+                {isVoiceMode && voiceRecorder.isSupported && (
+                  <AIVoiceButton
+                    isRecording={voiceRecorder.isRecording}
+                    isProcessing={isTranscribing}
+                    onClick={handleVoiceRecord}
+                    disabled={isInitializing}
+                  />
+                )}
                 <AIInputSubmit
                   className="size-8 rounded-xl"
                   disabled={!chatForm.formState.isValid || isInitializing}
