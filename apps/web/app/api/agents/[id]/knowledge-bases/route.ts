@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { recreateAgentWithKbs } from "@/lib/agent";
+import { syncAgentKbs } from "@/lib/agent";
 
 export async function GET(
   _req: NextRequest,
@@ -83,18 +83,18 @@ export async function POST(
       skipDuplicates: true,
     });
 
-    // Collect ALL KB UUIDs for this agent (existing + new)
+    // Collect ALL KB UUIDs that should be on this agent (full sync)
     const allAgentKbs = await prisma.agentKnowledgeBase.findMany({
       where: { agentId: id },
       include: { knowledgeBase: true },
     });
-    const kbUuids = allAgentKbs
+    const allKbUuids = allAgentKbs
       .map((akb) => akb.knowledgeBase.gradientKbUuid)
       .filter((uuid): uuid is string => !!uuid);
 
-    // Recreate agent with all KBs (fire-and-forget)
-    recreateAgentWithKbs(agent.id, kbUuids).catch((err) =>
-      console.error("[agent-kbs] Failed to recreate agent:", err),
+    // Sync DO agent to match our DB (fire-and-forget)
+    syncAgentKbs(agent.agentUuid, allKbUuids).catch((err) =>
+      console.error("[agent-kbs] Failed to sync KBs:", err),
     );
 
     return NextResponse.json({ success: true, count: knowledgeBaseIds.length }, { status: 201 });
@@ -144,18 +144,17 @@ export async function DELETE(
     // Remove from DB
     await prisma.agentKnowledgeBase.delete({ where: { id: agentKb.id } });
 
-    // Collect remaining KB UUIDs
+    // Collect remaining KB UUIDs and sync DO agent (fire-and-forget)
     const remainingKbs = await prisma.agentKnowledgeBase.findMany({
       where: { agentId: id },
       include: { knowledgeBase: true },
     });
-    const kbUuids = remainingKbs
+    const remainingUuids = remainingKbs
       .map((akb) => akb.knowledgeBase.gradientKbUuid)
       .filter((uuid): uuid is string => !!uuid);
 
-    // Recreate agent with remaining KBs (fire-and-forget)
-    recreateAgentWithKbs(agent.id, kbUuids).catch((err) =>
-      console.error("[agent-kbs] Failed to recreate agent:", err),
+    syncAgentKbs(agent.agentUuid, remainingUuids).catch((err) =>
+      console.error("[agent-kbs] Failed to sync KBs:", err),
     );
 
     return NextResponse.json({ success: true });

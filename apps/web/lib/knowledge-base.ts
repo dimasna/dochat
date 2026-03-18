@@ -1,5 +1,6 @@
 import { prisma } from "@dochat/db";
 import { eventBus } from "@/lib/event-bus";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 const DO_API_BASE = "https://api.digitalocean.com/v2/gen-ai";
 
@@ -20,15 +21,24 @@ export interface KbDatasource {
     crawling_option: string;
     embed_media: boolean;
   };
+  spaces_data_source?: {
+    bucket_name: string;
+    item_path: string;
+    region: string;
+  };
 }
 
 /**
  * Build a KbDatasource object from a source's properties.
+ * Sources with a spacesObjectKey use spaces_data_source (works for both
+ * KB creation and adding to existing KBs). Legacy sources with only
+ * storedObjectKey fall back to file_upload_data_source.
  */
 export function buildDatasource(source: {
   sourceType: string;
   sourceUrl: string | null;
   storedObjectKey: string | null;
+  spacesObjectKey: string | null;
   fileName: string | null;
   fileSize: number | null;
 }): KbDatasource | null {
@@ -41,6 +51,17 @@ export function buildDatasource(source: {
       },
     };
   }
+  // Prefer spaces_data_source (works for adding to existing KBs)
+  if (source.spacesObjectKey) {
+    return {
+      spaces_data_source: {
+        bucket_name: process.env.SPACES_BUCKET || "dochat",
+        item_path: source.spacesObjectKey,
+        region: process.env.SPACES_REGION || "sgp1",
+      },
+    };
+  }
+  // Legacy fallback: file_upload_data_source (only works during KB creation)
   if (source.storedObjectKey && source.fileName) {
     return {
       file_upload_data_source: {
@@ -103,6 +124,76 @@ export async function uploadFileToDo(
   }
 
   return upload.object_key;
+}
+
+// ─── Spaces upload ───────────────────────────────────
+
+function getSpacesClient(): S3Client {
+  const region = process.env.SPACES_REGION || "sgp1";
+  const accessKeyId = process.env.SPACES_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SPACES_SECRET_ACCESS_KEY;
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error("SPACES_ACCESS_KEY_ID and SPACES_SECRET_ACCESS_KEY must be configured");
+  }
+  return new S3Client({
+    endpoint: `https://${region}.digitaloceanspaces.com`,
+    region,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: false,
+  });
+}
+
+const MIME_TO_EXT: Record<string, string> = {
+  "text/plain": ".txt",
+  "text/csv": ".csv",
+  "text/html": ".html",
+  "text/markdown": ".md",
+  "text/xml": ".xml",
+  "application/pdf": ".pdf",
+  "application/json": ".json",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/msword": ".doc",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.ms-excel": ".xls",
+  "application/rtf": ".rtf",
+  "application/epub+zip": ".epub",
+};
+
+/**
+ * Upload a file to DO Spaces bucket for use as spaces_data_source.
+ * Ensures the file has a proper extension (required by DO indexer).
+ * Returns the item_path (object key within the bucket).
+ */
+export async function uploadToSpaces(
+  fileName: string,
+  fileBuffer: ArrayBuffer,
+  kbId: string,
+  mimeType?: string,
+): Promise<string> {
+  const bucket = process.env.SPACES_BUCKET || "dochat";
+  let safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+  // Ensure file has an extension — DO indexer skips files without one
+  const hasExtension = /\.[a-zA-Z0-9]{1,10}$/.test(safeFileName);
+  if (!hasExtension) {
+    const ext = (mimeType && MIME_TO_EXT[mimeType]) || ".txt";
+    safeFileName = `${safeFileName}${ext}`;
+  }
+
+  const contentType = mimeType || "application/octet-stream";
+  const itemPath = `kb-sources/${kbId}/${Date.now()}-${safeFileName}`;
+
+  const s3 = getSpacesClient();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: itemPath,
+      Body: new Uint8Array(fileBuffer),
+      ContentType: contentType,
+    }),
+  );
+
+  return itemPath;
 }
 
 // ─── KB folder lifecycle ──────────────────────────────
@@ -286,6 +377,10 @@ export async function createKnowledgeBaseKb(
 /**
  * Add a single datasource to an existing DO KB.
  * If the KB has no gradientKbUuid yet, creates the KB first.
+ *
+ * Uses the POST /knowledge_bases/{uuid}/data_sources endpoint:
+ * - web_crawler_data_source for websites
+ * - spaces_data_source for files/text (uploaded to our Spaces bucket)
  */
 export async function addSourceToKb(
   orgId: string,
@@ -295,12 +390,13 @@ export async function addSourceToKb(
   const kb = await prisma.knowledgeBase.findUniqueOrThrow({ where: { id: kbId } });
   const source = await prisma.knowledgeSource.findUniqueOrThrow({ where: { id: sourceId } });
 
-  // If KB has no DO KB yet, create it with all sources
+  // If KB has no DO KB yet, create the entire KB with all sources
   if (!kb.gradientKbUuid) {
     await createKnowledgeBaseKb(orgId, kbId);
     return;
   }
 
+  // Build the datasource payload
   const datasource = buildDatasource(source);
   if (!datasource) {
     await prisma.knowledgeSource.update({
@@ -322,7 +418,7 @@ export async function addSourceToKb(
 
     const doToken = getDoToken();
 
-    // Add datasource to existing KB
+    // Add datasource to existing KB (web_crawler or spaces_data_source)
     const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kb.gradientKbUuid}/data_sources`, {
       method: "POST",
       headers: {

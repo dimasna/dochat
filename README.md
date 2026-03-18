@@ -8,6 +8,7 @@ Dochat - AI Customer Support Agent SAAS
 - **Auth:** Clerk
 - **Payments:** DodoPayments
 - **AI:** DigitalOcean GenAI Platform
+- **Storage:** DigitalOcean Spaces (S3-compatible)
 
 ## Project Structure
 
@@ -58,6 +59,12 @@ NEXT_PUBLIC_WIDGET_URL=http://localhost:3006
 # Landing page widget (optional — shows demo widget on marketing page)
 NEXT_PUBLIC_LANDING_WIDGET_ORG_ID=
 NEXT_PUBLIC_LANDING_WIDGET_AGENT_ID=
+
+# DigitalOcean Spaces (S3-compatible storage for KB file uploads)
+SPACES_ACCESS_KEY_ID=
+SPACES_SECRET_ACCESS_KEY=
+SPACES_BUCKET=
+SPACES_REGION=
 
 # DodoPayments
 DODO_PAYMENTS_API_KEY=

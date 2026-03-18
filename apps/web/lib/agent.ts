@@ -232,6 +232,100 @@ export async function recreateAgentWithKbs(
   console.log(`[recreateAgentWithKbs] Agent ${agentId} recreated: ${newAgentUuid} with ${kbUuids.length} KBs`);
 }
 
+/**
+ * Attach knowledge bases to an existing DO agent.
+ * POST /v2/gen-ai/agents/{agent_uuid}/knowledge_bases
+ */
+export async function attachKbsToAgent(
+  agentUuid: string,
+  kbUuids: string[],
+): Promise<void> {
+  if (kbUuids.length === 0) return;
+  const doToken = getDoToken();
+
+  const res = await fetch(`${DO_API_BASE}/agents/${agentUuid}/knowledge_bases`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${doToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      agent_uuid: agentUuid,
+      knowledge_base_uuids: kbUuids,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to attach KBs to agent: ${res.status} ${text}`);
+  }
+}
+
+/**
+ * Detach a single knowledge base from an existing DO agent.
+ * DELETE /v2/gen-ai/agents/{agent_uuid}/knowledge_bases/{kb_uuid}
+ */
+export async function detachKbFromAgent(
+  agentUuid: string,
+  kbUuid: string,
+): Promise<void> {
+  const doToken = getDoToken();
+
+  const res = await fetch(
+    `${DO_API_BASE}/agents/${agentUuid}/knowledge_bases/${kbUuid}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${doToken}` },
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to detach KB from agent: ${res.status} ${text}`);
+  }
+}
+
+/**
+ * Sync the DO agent's KB attachments to match what our DB says.
+ * Fetches the agent's current KBs from DO, then detaches stale ones
+ * and attaches missing ones.
+ */
+export async function syncAgentKbs(
+  agentUuid: string,
+  expectedKbUuids: string[],
+): Promise<void> {
+  const doToken = getDoToken();
+
+  // Get what DO agent currently has
+  const res = await fetch(`${DO_API_BASE}/agents/${agentUuid}`, {
+    headers: { Authorization: `Bearer ${doToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch DO agent: ${res.status}`);
+  }
+  const data = await res.json();
+  const currentKbUuids = new Set<string>(
+    (data.agent?.knowledge_bases || []).map((kb: { uuid: string }) => kb.uuid),
+  );
+
+  const expectedSet = new Set(expectedKbUuids);
+
+  // Detach KBs that shouldn't be there
+  for (const uuid of currentKbUuids) {
+    if (!expectedSet.has(uuid)) {
+      await detachKbFromAgent(agentUuid, uuid).catch((err) =>
+        console.warn(`[syncAgentKbs] Failed to detach stale KB ${uuid}:`, err.message),
+      );
+    }
+  }
+
+  // Attach KBs that are missing
+  const toAttach = expectedKbUuids.filter((uuid) => !currentKbUuids.has(uuid));
+  if (toAttach.length > 0) {
+    await attachKbsToAgent(agentUuid, toAttach);
+  }
+}
+
 // ─── Agent finalization ─────────────────────────────────
 
 /**

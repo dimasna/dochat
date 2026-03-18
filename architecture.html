@@ -148,6 +148,7 @@ flowchart TB
     direction LR
     PRISMA["Prisma ORM<br/><i>@dochat/db package</i>"]
     PG[("PostgreSQL<br/><i>DO Managed DB</i>")]
+    SPACES[("DO Spaces<br/><i>S3-compatible storage<br/>KB file uploads</i>")]
     PRISMA --> PG
   end
 
@@ -164,6 +165,7 @@ flowchart TB
   EXTERNAL_SITE -- "loads widget.js" --> EMBED
   CHAT_UI -- "sessions, chat,<br/>config" --> API
   LIB -- "provision agents,<br/>manage KBs,<br/>chat completions" --> DO_GENAI
+  LIB -- "upload KB files" --> SPACES
   LIB --> PRISMA
   API --> CLERK
   API --> DODO
@@ -179,7 +181,7 @@ flowchart TB
   class WEB_SVC,WIDGET_SVC doBlue
   class DO_GENAI,AGENTS_API,KB_API,IDX doGenai
   class DASH,API,LIB,EMBED,CHAT_UI service
-  class PG,PRISMA data
+  class PG,PRISMA,SPACES data
   class BIZ,END_USER user
   class CLERK,DODO thirdparty
   class EXTERNAL_SITE external
@@ -188,7 +190,7 @@ flowchart TB
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:#0069FF"></div>DO App Platform</div>
     <div class="legend-item"><div class="legend-dot" style="background:#6c63ff"></div>DO GenAI Platform</div>
-    <div class="legend-item"><div class="legend-dot" style="background:#0f766e"></div>DO Managed Database</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#0f766e"></div>DO Managed Database &amp; Spaces</div>
     <div class="legend-item"><div class="legend-dot" style="background:#4a1d6a"></div>Third-Party Services</div>
   </div>
 
@@ -226,25 +228,25 @@ flowchart LR
 
   <!-- ===== DIAGRAM 3: Knowledge Base Flow ===== -->
   <p class="section-title">Knowledge Base Lifecycle</p>
-  <p class="section-desc">Async KB creation, datasource ingestion, and the agent rebuild required for KB linking</p>
+  <p class="section-desc">Async KB creation, datasource ingestion via DO Spaces, and attach/detach API for agent linking</p>
 
   <div class="mermaid">
 flowchart LR
   CREATE_KB["Create KB<br/><i>POST /knowledge_bases</i>"]
   WAIT_DB["Wait for DB Ready<br/><i>~7 min provisioning</i>"]
-  ADD_SRC["Add Datasources<br/><i>Files &bull; Websites &bull; Text</i>"]
+  ADD_SRC["Add Datasources<br/><i>Upload to DO Spaces<br/>spaces_data_source</i>"]
   INDEX["Trigger Indexing<br/><i>POST /indexing_jobs</i>"]
   WAIT_IDX["Wait for Completion<br/><i>Poll indexing status</i>"]
   READY["KB Indexed<br/><i>Ready for use</i>"]
-  REBUILD["Rebuild Agent<br/><i>Delete old &rarr; Create new<br/>with knowledge_base_uuid</i>"]
+  ATTACH["Attach to Agent<br/><i>POST /agents/{uuid}<br/>/knowledge_bases</i>"]
 
-  CREATE_KB --> WAIT_DB --> ADD_SRC --> INDEX --> WAIT_IDX --> READY --> REBUILD
+  CREATE_KB --> WAIT_DB --> ADD_SRC --> INDEX --> WAIT_IDX --> READY --> ATTACH
 
   classDef step fill:#1e293b,stroke:#334155,color:#e2e8f0
   classDef wait fill:#312e81,stroke:#4f46e5,color:#e2e8f0
   classDef done fill:#0f766e,stroke:#0d9488,color:#fff,font-weight:bold
 
-  class CREATE_KB,ADD_SRC,INDEX,REBUILD step
+  class CREATE_KB,ADD_SRC,INDEX,ATTACH step
   class WAIT_DB,WAIT_IDX wait
   class READY done
   </div>
@@ -367,6 +369,7 @@ flowchart TB
     <span class="badge do">DigitalOcean App Platform</span>
     <span class="badge do">DigitalOcean GenAI</span>
     <span class="badge do">DO Managed PostgreSQL</span>
+    <span class="badge do">DO Spaces</span>
     <span class="badge core">Next.js 15</span>
     <span class="badge core">React 19</span>
     <span class="badge core">TypeScript</span>

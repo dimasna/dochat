@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { uploadFileToDo, addSourceToKb } from "@/lib/knowledge-base";
+import { uploadFileToDo, uploadToSpaces, addSourceToKb } from "@/lib/knowledge-base";
 import { checkSourceLimit } from "@/lib/limits";
 
 export async function POST(
@@ -54,7 +54,16 @@ async function handleFileSource(formData: FormData, kbId: string) {
   if (!file) throw new Error("No file provided");
 
   const fileBuffer = await file.arrayBuffer();
-  const storedObjectKey = await uploadFileToDo(file.name, file.size, fileBuffer);
+
+  // Spaces is the primary upload path (used by addSourceToKb for spaces_data_source).
+  // Presigned URL is best-effort (legacy fallback for file_upload_data_source during KB creation).
+  const [storedObjectKey, spacesObjectKey] = await Promise.all([
+    uploadFileToDo(file.name, file.size, fileBuffer).catch((err) => {
+      console.warn("[handleFileSource] Presigned URL upload failed (non-critical):", err.message);
+      return null;
+    }),
+    uploadToSpaces(file.name, fileBuffer, kbId, file.type || undefined),
+  ]);
 
   return prisma.knowledgeSource.create({
     data: {
@@ -63,6 +72,7 @@ async function handleFileSource(formData: FormData, kbId: string) {
       title: file.name,
       fileName: file.name,
       storedObjectKey,
+      spacesObjectKey,
       mimeType: file.type,
       fileSize: file.size,
     },
@@ -94,7 +104,15 @@ async function handleTextSource(formData: FormData, kbId: string) {
   const safeTitle = title.replace(/[^a-zA-Z0-9-_]/g, "_");
   const fileName = `${safeTitle}.txt`;
   const textBuffer = new TextEncoder().encode(content);
-  const storedObjectKey = await uploadFileToDo(fileName, textBuffer.byteLength, textBuffer.buffer as ArrayBuffer);
+
+  // Spaces is the primary upload path. Presigned URL is best-effort.
+  const [storedObjectKey, spacesObjectKey] = await Promise.all([
+    uploadFileToDo(fileName, textBuffer.byteLength, textBuffer.buffer as ArrayBuffer).catch((err) => {
+      console.warn("[handleTextSource] Presigned URL upload failed (non-critical):", err.message);
+      return null;
+    }),
+    uploadToSpaces(fileName, textBuffer.buffer as ArrayBuffer, kbId, "text/plain"),
+  ]);
 
   return prisma.knowledgeSource.create({
     data: {
@@ -103,6 +121,7 @@ async function handleTextSource(formData: FormData, kbId: string) {
       title,
       fileName,
       storedObjectKey,
+      spacesObjectKey,
       mimeType: "text/plain",
       fileSize: textBuffer.byteLength,
     },

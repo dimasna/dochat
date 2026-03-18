@@ -150,6 +150,7 @@ model KnowledgeSource {
   title                  String
   fileName               String?  // nullable — websites have no file
   storedObjectKey        String?  // DO GenAI presigned upload object key (file/text sources)
+  spacesObjectKey        String?  // DO Spaces item path (for spaces_data_source)
   sourceUrl              String?  // for website source type: the crawled URL
   mimeType               String?
   fileSize               Int?
