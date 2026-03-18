@@ -10,14 +10,39 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { BotIcon, CheckIcon, ChevronsUpDownIcon } from "lucide-react";
+import { Switch } from "@workspace/ui/components/switch";
+import { BotIcon, CheckIcon, ChevronsUpDownIcon, Loader2Icon } from "lucide-react";
 import Image from "next/image";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 const WORKSPACE_ROUTES = ["/workspace", "/files", "/billing"];
 
 export const TopBar = () => {
   const pathname = usePathname();
   const { activeAgent, agents, setActiveAgentId } = useActiveAgent();
+  const queryClient = useQueryClient();
+  const [isToggling, setIsToggling] = useState(false);
+
+  const handleToggleVisibility = async () => {
+    if (!activeAgent || isToggling) return;
+    setIsToggling(true);
+    try {
+      const res = await fetch(`/api/agents/${activeAgent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isPublic: !activeAgent.isPublic }),
+      });
+      if (!res.ok) throw new Error("Failed to update visibility");
+      toast.success(activeAgent.isPublic ? "Agent set to private" : "Agent published");
+      queryClient.invalidateQueries({ queryKey: ["agents"] });
+    } catch {
+      toast.error("Failed to update visibility");
+    } finally {
+      setIsToggling(false);
+    }
+  };
 
   const isWorkspaceLevel =
     WORKSPACE_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"));
@@ -75,6 +100,23 @@ export const TopBar = () => {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Visibility toggle */}
+            <div className="flex items-center gap-2 ml-4 pl-4 border-l">
+              {isToggling ? (
+                <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+              ) : (
+                <Switch
+                  checked={activeAgent.isPublic}
+                  onCheckedChange={handleToggleVisibility}
+                  disabled={activeAgent.status !== "active"}
+                  className="scale-90"
+                />
+              )}
+              <span className="text-xs text-muted-foreground">
+                {activeAgent.isPublic ? "Published" : "Private"}
+              </span>
+            </div>
           </>
         )}
       </div>

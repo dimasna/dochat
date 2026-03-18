@@ -59,6 +59,12 @@ const chatFormSchema = z.object({
   message: z.string().min(1),
 });
 
+// Module-level cache: survives component unmount/remount (but not full page refresh)
+let cachedAgentId: string | null = null;
+let cachedSessionToken: string | null = null;
+let cachedConversationId: string | null = null;
+let cachedMessages: MessageData[] = [];
+
 /** Darken a hex color by a given amount (0-1) */
 function darkenHex(hex: string, amount: number): string {
   const h = hex.replace("#", "");
@@ -252,17 +258,71 @@ export const PlaygroundView = () => {
   };
 
   // --- Chat preview ---
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<MessageData[]>([]);
+  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+    // Restore from module-level cache if same agent
+    return cachedAgentId === activeAgentId ? cachedSessionToken : null;
+  });
+  const [conversationId, setConversationId] = useState<string | null>(() => {
+    return cachedAgentId === activeAgentId ? cachedConversationId : null;
+  });
+  const [messages, setMessages] = useState<MessageData[]>(() => {
+    return cachedAgentId === activeAgentId ? cachedMessages : [];
+  });
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Keep module-level cache in sync
+  useEffect(() => {
+    if (activeAgentId) cachedAgentId = activeAgentId;
+  }, [activeAgentId]);
+  useEffect(() => { cachedSessionToken = sessionToken; }, [sessionToken]);
+  useEffect(() => { cachedConversationId = conversationId; }, [conversationId]);
+  useEffect(() => { cachedMessages = messages; }, [messages]);
+
+  const connectSSE = useCallback((convId: string, token: string) => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    const es = new EventSource(
+      `/api/embed/conversations/${convId}/messages/stream?sessionToken=${token}`,
+    );
+    eventSourceRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "init") {
+          setMessages(data.messages);
+        } else if (data.type === "message") {
+          if (data.message.role === "assistant" || data.message.role === "support") {
+            setIsTyping(false);
+          }
+          setMessages((prev) => {
+            const filtered = prev.filter(
+              (m) => m.id !== data.message.id && !m.id.startsWith("temp-"),
+            );
+            return [...filtered, data.message];
+          });
+        }
+      } catch {
+        // Ignore malformed events
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, []);
 
   const initChat = useCallback(async () => {
     if (!organization || !activeAgentId) return;
 
     setIsInitializing(true);
     setMessages([]);
+    setIsTyping(false);
 
     // Close existing SSE connection
     if (eventSourceRef.current) {
@@ -301,49 +361,34 @@ export const PlaygroundView = () => {
       setConversationId(convId);
 
       // Connect SSE
-      const es = new EventSource(
-        `/api/embed/conversations/${convId}/messages/stream?sessionToken=${token}`,
-      );
-      eventSourceRef.current = es;
-
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === "init") {
-            setMessages(data.messages);
-          } else if (data.type === "message") {
-            setMessages((prev) => {
-              const filtered = prev.filter(
-                (m) => m.id !== data.message.id && !m.id.startsWith("temp-"),
-              );
-              return [...filtered, data.message];
-            });
-          }
-        } catch {
-          // Ignore malformed events
-        }
-      };
-
-      es.onerror = () => {
-        es.close();
-      };
+      connectSSE(convId, token);
     } catch (err) {
       console.error("Playground init failed:", err);
       toast.error("Failed to initialize chat preview");
     } finally {
       setIsInitializing(false);
     }
-  }, [organization, activeAgentId]);
+  }, [organization, activeAgentId, connectSSE]);
 
-  // Init chat on mount
+  // Init chat or reconnect SSE on mount
   useEffect(() => {
-    initChat();
+    const hasCacheForAgent = cachedAgentId === activeAgentId && cachedConversationId && cachedSessionToken;
+
+    if (hasCacheForAgent) {
+      // Restore from cache — just reconnect SSE
+      connectSSE(cachedConversationId!, cachedSessionToken!);
+    } else {
+      // Fresh init
+      initChat();
+    }
+
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
     };
-  }, [initChat]);
+  }, [activeAgentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const chatForm = useForm<z.infer<typeof chatFormSchema>>({
     resolver: zodResolver(chatFormSchema),
@@ -364,6 +409,7 @@ export const PlaygroundView = () => {
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, tempMsg]);
+    setIsTyping(true);
 
     try {
       await fetch("/api/embed/chat", {
@@ -376,6 +422,7 @@ export const PlaygroundView = () => {
         }),
       });
     } catch {
+      setIsTyping(false);
       toast.error("Failed to send message");
     }
   };
@@ -719,6 +766,17 @@ export const PlaygroundView = () => {
                       </AIMessageContent>
                     </AIMessage>
                   ))}
+                  {isTyping && (
+                    <AIMessage from="assistant">
+                      <AIMessageContent>
+                        <div className="flex items-center gap-1 py-1 px-1">
+                          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                          <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                        </div>
+                      </AIMessageContent>
+                    </AIMessage>
+                  )}
                 </AIConversationContent>
               </AIConversation>
               {/* Quick reply suggestions */}

@@ -36,6 +36,7 @@ model Agent {
   name            String
   description     String?
   instruction     String?  @db.Text // Custom system prompt per agent
+  isPublic        Boolean  @default(false) // Whether the agent endpoint is publicly accessible
   status          String   @default("provisioning") // provisioning, active, failed
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

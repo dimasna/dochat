@@ -49,6 +49,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Block non-playground sessions from chatting with private agents
+    const agent = await prisma.agent.findUnique({
+      where: { id: conversation.agentId },
+    });
+    const isPlayground = (session.metadata as Record<string, unknown>)?.isPlayground === true;
+    if (agent && !agent.isPublic && !isPlayground) {
+      return NextResponse.json(
+        { error: "Agent is not publicly available" },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
     // Save user message
     const userMessage = await prisma.message.create({
       data: { conversationId, role: "user", content },

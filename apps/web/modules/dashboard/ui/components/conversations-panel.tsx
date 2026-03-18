@@ -21,7 +21,7 @@ import { statusFilterAtom } from "../../atoms";
 import { Skeleton } from "@workspace/ui/components/skeleton";
 import { useQuery } from "@tanstack/react-query";
 import { useActiveAgent } from "@/hooks/use-active-agent";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface ConversationItem {
   id: string;
@@ -69,6 +69,8 @@ export const ConversationsPanel = () => {
     });
   }, []);
 
+  const didAutoExpand = useRef(false);
+
   const { data: groups = [], isLoading } = useQuery<ContactGroup[]>({
     queryKey: ["conversations", statusFilter, activeAgentId],
     queryFn: async () => {
@@ -82,6 +84,22 @@ export const ConversationsPanel = () => {
     enabled: !!activeAgentId,
     refetchInterval: 5000,
   });
+
+  // Auto-expand the group containing the active conversation on initial load only
+  useEffect(() => {
+    if (didAutoExpand.current || groups.length === 0) return;
+    const activeGroup = groups.find((g) =>
+      g.conversations.some((c) => pathname === `/conversations/${c.id}`),
+    );
+    if (activeGroup) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.add(activeGroup.contactSession.id);
+        return next;
+      });
+      didAutoExpand.current = true;
+    }
+  }, [groups, pathname]);
 
   return (
     <div className="flex h-full w-full flex-col bg-background text-sidebar-foreground">
@@ -142,10 +160,7 @@ export const ConversationsPanel = () => {
                 ? getCountryFlagUrl(country.code)
                 : undefined;
 
-              const isActive = group.conversations.some(
-                (c) => pathname === `/conversations/${c.id}`,
-              );
-              const isExpanded = expanded.has(contactSession.id) || isActive;
+              const isExpanded = expanded.has(contactSession.id);
               const lastMessage = group.conversations[0]?.messages[0];
               const lastMsgFromOperator = lastMessage?.role !== "user";
 
@@ -180,19 +195,18 @@ export const ConversationsPanel = () => {
                           </span>
                         )}
                       </div>
-                      {!isExpanded && lastMessage && (
-                        <span className={cn(
-                          "line-clamp-1 text-xs text-muted-foreground block",
-                          !lastMsgFromOperator && "font-bold text-black",
-                        )}>
-                          {lastMessage.content}
-                        </span>
-                      )}
-                      {isExpanded && (
-                        <span className="text-xs text-muted-foreground truncate block">
-                          {contactSession.email}
-                        </span>
-                      )}
+                      <span className={cn(
+                        "truncate text-xs text-muted-foreground block",
+                        !isExpanded && lastMessage && !lastMsgFromOperator && "font-bold text-black",
+                      )}>
+                        {isExpanded
+                          ? contactSession.email
+                          : lastMessage
+                            ? lastMessage.content.length > 100
+                              ? lastMessage.content.slice(0, 100) + "..."
+                              : lastMessage.content
+                            : contactSession.email}
+                      </span>
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(group.lastUpdatedAt))}
@@ -243,7 +257,9 @@ export const ConversationsPanel = () => {
                                     "font-bold text-black",
                                 )}
                               >
-                                {lastMessage.content}
+                                {lastMessage.content.length > 100
+                                  ? lastMessage.content.slice(0, 100) + "..."
+                                  : lastMessage.content}
                               </span>
                             </div>
                           )}

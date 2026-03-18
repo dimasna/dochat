@@ -403,6 +403,41 @@ export async function updateDoAgent(
 }
 
 /**
+ * Toggle agent visibility on DO and update the DB.
+ * Uses the dedicated /deployment_visibility endpoint.
+ */
+export async function updateAgentVisibility(agentId: string, isPublic: boolean) {
+  const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+
+  if (agent.status === "active" && agent.agentUuid) {
+    const doToken = getDoToken();
+    const visibility = isPublic ? "VISIBILITY_PUBLIC" : "VISIBILITY_PRIVATE";
+
+    const res = await fetch(
+      `${DO_API_BASE}/agents/${agent.agentUuid}/deployment_visibility`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${doToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uuid: agent.agentUuid, visibility }),
+      },
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Failed to update agent visibility: ${res.status} ${text}`);
+    }
+  }
+
+  await prisma.agent.update({
+    where: { id: agentId },
+    data: { isPublic },
+  });
+}
+
+/**
  * Delete an agent from DO (agent + workspace). KBs are NOT deleted (owned by knowledge bases).
  */
 export async function deleteDoAgent(agent: {

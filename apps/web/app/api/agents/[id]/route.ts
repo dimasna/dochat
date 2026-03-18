@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { deleteDoAgent, updateDoAgent, tryFinalizeAgent } from "@/lib/agent";
+import { deleteDoAgent, updateDoAgent, tryFinalizeAgent, updateAgentVisibility } from "@/lib/agent";
 
 export async function GET(
   _req: NextRequest,
@@ -86,7 +86,12 @@ export async function PATCH(
     }
 
     const body = await req.json();
-    const { name, description, instruction } = body;
+    const { name, description, instruction, isPublic } = body;
+
+    // Handle visibility toggle
+    if (isPublic !== undefined) {
+      await updateAgentVisibility(id, isPublic);
+    }
 
     // Sync name/instruction to DO agent (skip if still provisioning)
     if (agent.status === "active" && agent.agentUuid) {

@@ -55,7 +55,9 @@ describe("provisionAgent", () => {
       agentAccessKey: "",
       workspaceUuid: "",
       name: "My Agent!",
+      description: null,
       instruction: "You are a support agent.",
+      isPublic: false,
       status: "provisioning",
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -88,8 +90,8 @@ describe("provisionAgent", () => {
     vi.mocked(prisma.agent.create).mockResolvedValue({
       id: "agent-1", orgId: "org-1", agentUuid: "uuid-1",
       agentEndpoint: "", agentAccessKey: "", workspaceUuid: "",
-      name: "Test", instruction: "", status: "provisioning",
-      createdAt: new Date(), updatedAt: new Date(),
+      name: "Test", description: null, instruction: "", isPublic: false,
+      status: "provisioning", createdAt: new Date(), updatedAt: new Date(),
     });
     vi.mocked(prisma.agentKnowledgeBase.createMany).mockResolvedValue({ count: 2 });
 

@@ -10,6 +10,7 @@ interface Agent {
   name: string;
   status: string;
   description: string | null;
+  isPublic: boolean;
 }
 
 export function useActiveAgent() {
