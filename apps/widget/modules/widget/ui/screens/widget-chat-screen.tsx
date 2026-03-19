@@ -240,25 +240,25 @@ export const WidgetChatScreen = () => {
       content: values.message,
     });
 
-    // Use API response directly so messages render even if SSE is delayed
+    // Use API response as fallback — only add messages SSE hasn't delivered yet
     const { userMessage, assistantMessage } = response;
-    if (userMessage) {
-      setMessages((prev) => {
-        const filtered = prev.filter(
-          (m) => !m.id.startsWith("temp-") && m.id !== userMessage.id,
-        );
-        return [...filtered, userMessage];
-      });
-    }
-    if (assistantMessage) {
-      setIsTyping(false);
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === assistantMessage.id)) return prev;
-        return [...prev, assistantMessage];
-      });
-    } else {
-      setIsTyping(false);
-    }
+    setIsTyping(false);
+    setMessages((prev) => {
+      // Remove optimistic temp messages
+      let next = prev.filter((m) => !m.id.startsWith("temp-"));
+
+      // Add user message if SSE hasn't delivered it yet
+      if (userMessage && !next.some((m) => m.id === userMessage.id)) {
+        next = [...next, userMessage];
+      }
+
+      // Add assistant message if SSE hasn't delivered it yet
+      if (assistantMessage && !next.some((m) => m.id === assistantMessage.id)) {
+        next = [...next, assistantMessage];
+      }
+
+      return next;
+    });
   };
 
   return (
