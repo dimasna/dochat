@@ -9,6 +9,7 @@ Dochat - AI Customer Support Agent SAAS
 - **Payments:** DodoPayments
 - **AI:** DigitalOcean GenAI Platform
 - **Storage:** DigitalOcean Spaces (S3-compatible)
+- **Real-time:** Server-Sent Events (SSE) + in-memory event bus
 
 ## Project Structure
 
@@ -21,6 +22,34 @@ packages/
   ui/        → Shared UI components
   shared/    → Shared utilities
 ```
+
+### Key Modules
+
+```
+apps/web/lib/
+  digitalocean/          → DO GenAI API integration layer
+    types.ts             → Shared API request/response types
+    errors.ts            → DoApiError class
+    client.ts            → Typed HTTP client (doFetch, doFetchRaw)
+    agents.api.ts        → Agent CRUD, access keys, visibility
+    knowledge-bases.api.ts → KB CRUD, datasource management
+    workspaces.api.ts    → Workspace CRUD
+    indexing.api.ts      → KB indexing triggers & status polling
+  agent.ts               → Agent provisioning, sync, chat orchestration
+  knowledge-base.ts      → KB provisioning, indexing, datasource building
+  auth.ts                → Clerk auth helpers, subscription bootstrapping
+  event-bus.ts           → In-memory pub/sub for real-time SSE events
+  limits.ts              → Plan-based usage limits & credit checks
+```
+
+### Architecture
+
+The DigitalOcean GenAI integration follows a layered architecture:
+
+1. **Types & Errors** (`types.ts`, `errors.ts`) — Shared type definitions and error classes
+2. **HTTP Client** (`client.ts`) — Authenticated fetch wrapper with error handling
+3. **API Modules** (`*.api.ts`) — Low-level DO API calls, one module per resource
+4. **Service Layer** (`agent.ts`, `knowledge-base.ts`) — Business logic that orchestrates API calls with database operations
 
 ## Local Development
 
