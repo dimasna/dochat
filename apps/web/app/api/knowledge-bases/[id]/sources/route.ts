@@ -22,6 +22,29 @@ export async function POST(
 
     await checkSourceLimit(orgId, kbId);
 
+    // Block source addition while OpenSearch DB is provisioning (paid plans only).
+    // Free users share a pre-provisioned DB so they're never blocked.
+    const sub = await prisma.subscription.findUnique({
+      where: { orgId },
+      select: { plan: true },
+    });
+    if ((sub?.plan ?? "free") !== "free") {
+      const allKbs = await prisma.knowledgeBase.findMany({
+        where: { orgId },
+        select: { indexingStatus: true },
+      });
+      const hasReady = allKbs.some((k) => k.indexingStatus === "ready");
+      const hasInProgress = allKbs.some((k) =>
+        ["creating", "indexing"].includes(k.indexingStatus),
+      );
+      if (allKbs.length > 0 && !hasReady && hasInProgress) {
+        return NextResponse.json(
+          { error: "Database is still provisioning. Please wait until the current indexing completes." },
+          { status: 409 },
+        );
+      }
+    }
+
     const formData = await req.formData();
     const sourceType = (formData.get("sourceType") as string) || "file";
 

@@ -131,12 +131,12 @@ export const PlaygroundView = () => {
       query.state.data?.status === "provisioning" ? 5000 : false,
   });
 
-  const { data: orgKbs = [] } = useQuery<Array<{
+  const { data: orgKbsData } = useQuery<{ knowledgeBases: Array<{
     id: string;
     name: string;
     indexingStatus: string;
     _count: { sources: number };
-  }>>({
+  }>; dbProvisioning: boolean }>({
     queryKey: ["knowledge-bases"],
     queryFn: async () => {
       const res = await fetch("/api/knowledge-bases");
@@ -144,6 +144,7 @@ export const PlaygroundView = () => {
       return res.json();
     },
   });
+  const orgKbs = orgKbsData?.knowledgeBases ?? [];
 
   useOrgEvents((event) => {
     if (event.type === "agent:status" && event.id === activeAgentId) {

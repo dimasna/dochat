@@ -41,7 +41,20 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(kbs);
+    // Determine if OpenSearch DB is still provisioning for this org.
+    // Free users use a shared pre-provisioned DB so they never see provisioning.
+    const sub = await prisma.subscription.findUnique({
+      where: { orgId },
+      select: { plan: true },
+    });
+    const isFree = (sub?.plan ?? "free") === "free";
+    const hasReady = kbs.some((kb) => kb.indexingStatus === "ready");
+    const hasInProgress = kbs.some((kb) =>
+      ["creating", "indexing"].includes(kb.indexingStatus),
+    );
+    const dbProvisioning = !isFree && kbs.length > 0 && !hasReady && hasInProgress;
+
+    return NextResponse.json({ knowledgeBases: kbs, dbProvisioning });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error";
     return NextResponse.json({ error: message }, { status: getErrorStatus(error) });

@@ -233,9 +233,24 @@ export async function createKnowledgeBaseKb(
     });
     eventBus.emit(orgId, { type: "kb:status", id: kbId, status: "creating" });
 
-    // 2. Get or create shared OpenSearch database ID for this org
+    // 2. Resolve OpenSearch database ID for this org
+    //    - Free plan: use shared DB from env (DO_FREE_OPENSEARCH_DB_ID)
+    //    - Paid plans: use org's own DB (stored on subscription)
     const sub = await prisma.subscription.findUnique({ where: { orgId } });
-    const databaseId = sub?.openSearchDatabaseId || undefined;
+    const plan = sub?.plan ?? "free";
+    const isFree = plan === "free";
+    let databaseId: string | undefined;
+
+    if (isFree) {
+      databaseId = process.env.DO_FREE_OPENSEARCH_DB_ID;
+      if (!databaseId) {
+        throw new Error("DO_FREE_OPENSEARCH_DB_ID not configured");
+      }
+      console.log(`[createKnowledgeBaseKb] Free plan — using shared DB: ${databaseId}`);
+    } else {
+      databaseId = sub?.openSearchDatabaseId || undefined;
+      console.log(`[createKnowledgeBaseKb] Paid plan (${plan}) — using org DB: ${databaseId ?? "none (will provision new)"}`);
+    }
 
     // 3. Create DO KB
     const doToken = getDoToken();
@@ -248,25 +263,47 @@ export async function createKnowledgeBaseKb(
       .toLowerCase()
       .slice(0, 60);
 
-    const kbBody: Record<string, unknown> = {
-      name: `${safeName}-kb`,
-      embedding_model_uuid: embeddingModel,
-      region: process.env.DO_AGENT_REGION || "tor1",
-      project_id: process.env.DO_PROJECT_ID,
-      datasources,
+    const buildKbBody = (dbId?: string) => {
+      const body: Record<string, unknown> = {
+        name: `${safeName}-kb`,
+        embedding_model_uuid: embeddingModel,
+        region: process.env.DO_AGENT_REGION || "tor1",
+        project_id: process.env.DO_PROJECT_ID,
+        datasources,
+      };
+      if (dbId) body.database_id = dbId;
+      return body;
     };
-    if (databaseId) {
-      kbBody.database_id = databaseId;
-    }
 
-    const kbRes = await fetch(`${DO_API_BASE}/knowledge_bases`, {
+    let kbRes = await fetch(`${DO_API_BASE}/knowledge_bases`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${doToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(kbBody),
+      body: JSON.stringify(buildKbBody(databaseId)),
     });
+
+    // If creation failed with a stored database_id (paid plans only), the DB
+    // may have been deleted on DO. Retry without it so DO provisions a fresh one.
+    if (!kbRes.ok && databaseId && !isFree) {
+      const errText = await kbRes.text();
+      console.warn(`[createKnowledgeBaseKb] KB creation failed with database_id ${databaseId}: ${kbRes.status} ${errText} — retrying without database_id`);
+      await prisma.subscription.update({
+        where: { orgId },
+        data: { openSearchDatabaseId: null },
+      });
+      databaseId = undefined;
+
+      kbRes = await fetch(`${DO_API_BASE}/knowledge_bases`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${doToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildKbBody()),
+      });
+    }
 
     if (!kbRes.ok) {
       const text = await kbRes.text();
@@ -282,7 +319,7 @@ export async function createKnowledgeBaseKb(
     // DO API doesn't return data_sources in creation response — fetch them separately
     const datasourceUuids = await fetchDatasourceUuids(kbUuid);
 
-    // 4. Save KB UUID to KB record + datasource UUIDs to sources
+    // 5. Save KB UUID to KB record + datasource UUIDs to sources
     await prisma.knowledgeBase.update({
       where: { id: kbId },
       data: {
@@ -306,20 +343,21 @@ export async function createKnowledgeBaseKb(
 
     eventBus.emit(orgId, { type: "kb:status", id: kbId, status: "indexing" });
 
-    // 5. Save shared DB ID if this is the first KB for the org
-    if (!databaseId && returnedDbId) {
-      await prisma.subscription.update({
+    // 6. Save DB ID for paid plans (free users share a global DB)
+    if (!isFree && !databaseId && returnedDbId) {
+      await prisma.subscription.upsert({
         where: { orgId },
-        data: { openSearchDatabaseId: returnedDbId },
+        update: { openSearchDatabaseId: returnedDbId },
+        create: { orgId, openSearchDatabaseId: returnedDbId },
       });
     }
 
-    // 6. Wait for KB DB provisioning + trigger indexing
+    // 7. Wait for KB DB provisioning + trigger indexing
     if (datasourceUuids.length > 0) {
       await waitForKbReadyAndIndex(kbUuid, datasourceUuids);
     }
 
-    // 7. Wait for indexing to complete
+    // 8. Wait for indexing to complete
     const indexResult = await waitForKbIndexingComplete(kbUuid);
 
     if (indexResult === "failed") {
@@ -345,7 +383,7 @@ export async function createKnowledgeBaseKb(
       return;
     }
 
-    // 8. Mark all sources and KB as "ready"
+    // 9. Mark all sources and KB as "ready"
     await prisma.knowledgeSource.updateMany({
       where: { knowledgeBaseId: kbId },
       data: { indexingStatus: "ready" },

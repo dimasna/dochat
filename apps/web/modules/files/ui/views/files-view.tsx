@@ -66,6 +66,11 @@ interface KnowledgeBase {
   _count: { sources: number };
 }
 
+interface KnowledgeBasesResponse {
+  knowledgeBases: KnowledgeBase[];
+  dbProvisioning: boolean;
+}
+
 function StatusBadge({ status }: { status: string }) {
   const isProcessing = ["pending", "creating", "indexing"].includes(status);
   const variant = status === "ready" ? "default" : status === "failed" ? "destructive" : "secondary";
@@ -105,7 +110,7 @@ export const FilesView = () => {
   const router = useRouter();
   const { canCreateKb, canAddSource } = usePlanLimits();
 
-  const { data: knowledgeBases = [], isLoading } = useQuery<KnowledgeBase[]>({
+  const { data, isLoading } = useQuery<KnowledgeBasesResponse>({
     queryKey: ["knowledge-bases"],
     queryFn: async () => {
       const res = await fetch("/api/knowledge-bases");
@@ -113,6 +118,8 @@ export const FilesView = () => {
       return res.json();
     },
   });
+  const knowledgeBases = data?.knowledgeBases ?? [];
+  const dbProvisioning = data?.dbProvisioning ?? false;
 
   // Real-time updates via SSE
   useOrgEvents((event) => {
@@ -313,7 +320,17 @@ export const FilesView = () => {
             </p>
           </div>
 
-          <div className="mt-8 rounded-lg border bg-background">
+          {dbProvisioning && (
+            <div className="mt-8 flex items-center gap-3 rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-yellow-800 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-200">
+              <Loader2Icon className="size-4 shrink-0 animate-spin" />
+              <p>
+                Database is being provisioned. You can add more sources once the
+                current indexing completes.
+              </p>
+            </div>
+          )}
+
+          <div className={`${dbProvisioning ? "mt-4" : "mt-8"} rounded-lg border bg-background`}>
             <div className="flex items-center justify-end border-b px-6 py-4">
               {canCreateKb ? (
                 <Button onClick={() => setCreateDialogOpen(true)}>
@@ -354,7 +371,7 @@ export const FilesView = () => {
                 ) : (
                   knowledgeBases.map((kb) => {
                     const isExpanded = expandedKbs.has(kb.id);
-                    const sourceAllowed = canAddSource(kb._count.sources);
+                    const sourceAllowed = canAddSource(kb._count.sources) && !dbProvisioning;
                     return (
                       <KbRow
                         key={kb.id}

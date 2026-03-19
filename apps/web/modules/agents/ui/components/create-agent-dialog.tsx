@@ -40,7 +40,7 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
   const [instruction, setInstruction] = useState("");
   const [selectedKbIds, setSelectedKbIds] = useState<Set<string>>(new Set());
 
-  const { data: orgKbs = [] } = useQuery<OrgKb[]>({
+  const { data: orgKbsData } = useQuery<{ knowledgeBases: OrgKb[]; dbProvisioning: boolean }>({
     queryKey: ["knowledge-bases"],
     queryFn: async () => {
       const res = await fetch("/api/knowledge-bases");
@@ -49,6 +49,7 @@ export const CreateAgentDialog = ({ open, onOpenChange }: CreateAgentDialogProps
     },
     enabled: open,
   });
+  const orgKbs = orgKbsData?.knowledgeBases ?? [];
 
   const toggleKb = (id: string) => {
     setSelectedKbIds((prev) => {
