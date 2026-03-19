@@ -84,7 +84,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    return res.json();
+    return res.json() as Promise<{
+      userMessage: { id: string; role: string; content: string; createdAt: string } | null;
+      assistantMessage: { id: string; role: string; content: string; createdAt: string } | null;
+    }>;
   },
 
   endConversation: async (conversationId: string, sessionToken: string) => {

@@ -234,10 +234,30 @@ export const WidgetChatScreen = () => {
       setConversationId(activeConversationId);
     }
 
-    await api.sendMessage({
+    const response = await api.sendMessage({
       conversationId: activeConversationId,
       sessionToken: contactSession.sessionToken,
       content: values.message,
+    });
+
+    // Use API response as fallback — only add messages SSE hasn't delivered yet
+    const { userMessage, assistantMessage } = response;
+    setIsTyping(false);
+    setMessages((prev) => {
+      // Remove optimistic temp messages
+      let next = prev.filter((m) => !m.id.startsWith("temp-"));
+
+      // Add user message if SSE hasn't delivered it yet
+      if (userMessage && !next.some((m) => m.id === userMessage.id)) {
+        next = [...next, userMessage];
+      }
+
+      // Add assistant message if SSE hasn't delivered it yet
+      if (assistantMessage && !next.some((m) => m.id === assistantMessage.id)) {
+        next = [...next, assistantMessage];
+      }
+
+      return next;
     });
   };
 
