@@ -9,7 +9,12 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { orgId } = await getAuthUser();
+  let orgId: string | undefined;
+  try {
+    ({ orgId } = await getAuthUser());
+  } catch {
+    return new Response("Unauthorized", { status: 401 });
+  }
   if (!orgId) {
     return new Response("Unauthorized", { status: 401 });
   }

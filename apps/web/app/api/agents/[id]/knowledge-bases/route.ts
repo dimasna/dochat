@@ -92,8 +92,9 @@ export async function POST(
       .map((akb) => akb.knowledgeBase.gradientKbUuid)
       .filter((uuid): uuid is string => !!uuid);
 
-    // Sync DO agent to match our DB (fire-and-forget)
-    syncAgentKbs(agent.agentUuid, allKbUuids).catch((err) =>
+    // Recreate DO agent with updated KBs (fire-and-forget)
+    // DO API only links KBs at creation time, so we must recreate
+    syncAgentKbs(agent.id, allKbUuids).catch((err) =>
       console.error("[agent-kbs] Failed to sync KBs:", err),
     );
 
@@ -153,7 +154,8 @@ export async function DELETE(
       .map((akb) => akb.knowledgeBase.gradientKbUuid)
       .filter((uuid): uuid is string => !!uuid);
 
-    syncAgentKbs(agent.agentUuid, remainingUuids).catch((err) =>
+    // Recreate DO agent with remaining KBs (fire-and-forget)
+    syncAgentKbs(agent.id, remainingUuids).catch((err) =>
       console.error("[agent-kbs] Failed to sync KBs:", err),
     );
 

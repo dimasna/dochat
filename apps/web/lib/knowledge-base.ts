@@ -1,38 +1,14 @@
 import { prisma } from "@dochat/db";
 import { eventBus } from "@/lib/event-bus";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { kbApi, indexingApi } from "@/lib/digitalocean";
+import type { DoKbDatasource } from "@/lib/digitalocean";
 
-const DO_API_BASE = "https://api.digitalocean.com/v2/gen-ai";
-
-function getDoToken() {
-  const token = process.env.DIGITALOCEAN_API_TOKEN;
-  if (!token) throw new Error("DIGITALOCEAN_API_TOKEN not configured");
-  return token;
-}
-
-export interface KbDatasource {
-  file_upload_data_source?: {
-    original_file_name: string;
-    size_in_bytes: string;
-    stored_object_key: string;
-  };
-  web_crawler_data_source?: {
-    base_url: string;
-    crawling_option: string;
-    embed_media: boolean;
-  };
-  spaces_data_source?: {
-    bucket_name: string;
-    item_path: string;
-    region: string;
-  };
-}
+export type KbDatasource = DoKbDatasource;
 
 /**
  * Build a KbDatasource object from a source's properties.
- * Sources with a spacesObjectKey use spaces_data_source (works for both
- * KB creation and adding to existing KBs). Legacy sources with only
- * storedObjectKey fall back to file_upload_data_source.
+ * Spaces takes precedence over legacy file_upload_data_source.
  */
 export function buildDatasource(source: {
   sourceType: string;
@@ -51,7 +27,6 @@ export function buildDatasource(source: {
       },
     };
   }
-  // Prefer spaces_data_source (works for adding to existing KBs)
   if (source.spacesObjectKey) {
     return {
       spaces_data_source: {
@@ -61,7 +36,6 @@ export function buildDatasource(source: {
       },
     };
   }
-  // Legacy fallback: file_upload_data_source (only works during KB creation)
   if (source.storedObjectKey && source.fileName) {
     return {
       file_upload_data_source: {
@@ -72,58 +46,6 @@ export function buildDatasource(source: {
     };
   }
   return null;
-}
-
-/**
- * Upload a file to DO GenAI via presigned URL.
- * Returns the stored object key for use in file_upload_data_source.
- */
-export async function uploadFileToDo(
-  fileName: string,
-  fileSize: number,
-  fileBuffer: ArrayBuffer,
-): Promise<string> {
-  const doToken = getDoToken();
-
-  // 1. Get presigned upload URL
-  const presignRes = await fetch(
-    `${DO_API_BASE}/knowledge_bases/data_sources/file_upload_presigned_urls`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${doToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        files: [{ file_name: fileName, file_size: String(fileSize) }],
-      }),
-    },
-  );
-
-  if (!presignRes.ok) {
-    const text = await presignRes.text();
-    throw new Error(`Failed to get presigned URL: ${presignRes.status} ${text}`);
-  }
-
-  const presignData = await presignRes.json();
-  const upload = presignData.uploads?.[0];
-  if (!upload?.presigned_url || !upload?.object_key) {
-    throw new Error(`Invalid presigned URL response: ${JSON.stringify(presignData)}`);
-  }
-
-  // 2. Upload file to presigned URL
-  const uploadRes = await fetch(upload.presigned_url, {
-    method: "PUT",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: fileBuffer,
-  });
-
-  if (!uploadRes.ok) {
-    const text = await uploadRes.text().catch(() => "");
-    throw new Error(`Failed to upload file to DO GenAI: ${uploadRes.status} ${text}`);
-  }
-
-  return upload.object_key;
 }
 
 // ─── Spaces upload ───────────────────────────────────
@@ -161,7 +83,6 @@ const MIME_TO_EXT: Record<string, string> = {
 
 /**
  * Upload a file to DO Spaces bucket for use as spaces_data_source.
- * Ensures the file has a proper extension (required by DO indexer).
  * Returns the item_path (object key within the bucket).
  */
 export async function uploadToSpaces(
@@ -173,7 +94,6 @@ export async function uploadToSpaces(
   const bucket = process.env.SPACES_BUCKET || "dochat";
   let safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
 
-  // Ensure file has an extension — DO indexer skips files without one
   const hasExtension = /\.[a-zA-Z0-9]{1,10}$/.test(safeFileName);
   if (!hasExtension) {
     const ext = (mimeType && MIME_TO_EXT[mimeType]) || ".txt";
@@ -200,7 +120,6 @@ export async function uploadToSpaces(
 
 /**
  * Create a DO Knowledge Base for a KB folder with all its current sources.
- * Each KB folder gets one DO KB. The org shares one OpenSearch database.
  * Runs in the background (fire-and-forget from source add handler).
  */
 export async function createKnowledgeBaseKb(
@@ -234,8 +153,6 @@ export async function createKnowledgeBaseKb(
     eventBus.emit(orgId, { type: "kb:status", id: kbId, status: "creating" });
 
     // 2. Resolve OpenSearch database ID for this org
-    //    - Free plan: use shared DB from env (DO_FREE_OPENSEARCH_DB_ID)
-    //    - Paid plans: use org's own DB (stored on subscription)
     const sub = await prisma.subscription.findUnique({ where: { orgId } });
     const plan = sub?.plan ?? "free";
     const isFree = plan === "free";
@@ -243,17 +160,12 @@ export async function createKnowledgeBaseKb(
 
     if (isFree) {
       databaseId = process.env.DO_FREE_OPENSEARCH_DB_ID;
-      if (!databaseId) {
-        throw new Error("DO_FREE_OPENSEARCH_DB_ID not configured");
-      }
-      console.log(`[createKnowledgeBaseKb] Free plan — using shared DB: ${databaseId}`);
+      if (!databaseId) throw new Error("DO_FREE_OPENSEARCH_DB_ID not configured");
     } else {
       databaseId = sub?.openSearchDatabaseId || undefined;
-      console.log(`[createKnowledgeBaseKb] Paid plan (${plan}) — using org DB: ${databaseId ?? "none (will provision new)"}`);
     }
 
     // 3. Create DO KB
-    const doToken = getDoToken();
     const embeddingModel = process.env.DO_EMBEDDING_MODEL_UUID;
     if (!embeddingModel) throw new Error("DO_EMBEDDING_MODEL_UUID not configured");
 
@@ -275,51 +187,35 @@ export async function createKnowledgeBaseKb(
       return body;
     };
 
-    let kbRes = await fetch(`${DO_API_BASE}/knowledge_bases`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${doToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildKbBody(databaseId)),
-    });
-
-    // If creation failed with a stored database_id (paid plans only), the DB
-    // may have been deleted on DO. Retry without it so DO provisions a fresh one.
-    if (!kbRes.ok && databaseId && !isFree) {
-      const errText = await kbRes.text();
-      console.warn(`[createKnowledgeBaseKb] KB creation failed with database_id ${databaseId}: ${kbRes.status} ${errText} — retrying without database_id`);
-      await prisma.subscription.update({
-        where: { orgId },
-        data: { openSearchDatabaseId: null },
-      });
-      databaseId = undefined;
-
-      kbRes = await fetch(`${DO_API_BASE}/knowledge_bases`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${doToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(buildKbBody()),
-      });
+    let kbData;
+    try {
+      kbData = await kbApi.createKnowledgeBase(buildKbBody(databaseId) as any);
+    } catch (err: any) {
+      // If creation failed with a stored database_id (paid plans only), the DB
+      // may have been deleted on DO. Retry without it.
+      if (databaseId && !isFree) {
+        console.warn(`[createKnowledgeBaseKb] KB creation failed with database_id: ${err.message} — retrying without`);
+        await prisma.subscription.update({
+          where: { orgId },
+          data: { openSearchDatabaseId: null },
+        });
+        databaseId = undefined;
+        kbData = await kbApi.createKnowledgeBase(buildKbBody() as any);
+      } else {
+        throw err;
+      }
     }
 
-    if (!kbRes.ok) {
-      const text = await kbRes.text();
-      throw new Error(`Failed to create KB: ${kbRes.status} ${text}`);
-    }
-
-    const kbData = await kbRes.json();
     const kbUuid = kbData.knowledge_base?.uuid;
     if (!kbUuid) throw new Error("No UUID returned from KB creation");
 
     const returnedDbId = kbData.knowledge_base?.database_id;
 
-    // DO API doesn't return data_sources in creation response — fetch them separately
-    const datasourceUuids = await fetchDatasourceUuids(kbUuid);
+    // Fetch datasource UUIDs (not returned in creation response)
+    const datasourceRecords = await kbApi.listDataSources(kbUuid);
+    const datasourceUuids = datasourceRecords.map((ds) => ds.uuid);
 
-    // 5. Save KB UUID to KB record + datasource UUIDs to sources
+    // 5. Save KB UUID + datasource UUIDs
     await prisma.knowledgeBase.update({
       where: { id: kbId },
       data: {
@@ -328,7 +224,6 @@ export async function createKnowledgeBaseKb(
       },
     });
 
-    // Map datasource UUIDs back to sources (best effort — by order)
     for (let i = 0; i < kb.sources.length && i < datasourceUuids.length; i++) {
       const source = kb.sources[i]!;
       await prisma.knowledgeSource.update({
@@ -343,7 +238,7 @@ export async function createKnowledgeBaseKb(
 
     eventBus.emit(orgId, { type: "kb:status", id: kbId, status: "indexing" });
 
-    // 6. Save DB ID for paid plans (free users share a global DB)
+    // 6. Save DB ID for paid plans
     if (!isFree && !databaseId && returnedDbId) {
       await prisma.subscription.upsert({
         where: { orgId },
@@ -378,7 +273,6 @@ export async function createKnowledgeBaseKb(
     }
 
     if (indexResult === "timeout") {
-      // Keep as indexing — don't mark ready prematurely
       console.warn(`[createKnowledgeBaseKb] KB ${kbId} (DO: ${kbUuid}) indexing timed out, status remains indexing`);
       return;
     }
@@ -415,10 +309,6 @@ export async function createKnowledgeBaseKb(
 /**
  * Add a single datasource to an existing DO KB.
  * If the KB has no gradientKbUuid yet, creates the KB first.
- *
- * Uses the POST /knowledge_bases/{uuid}/data_sources endpoint:
- * - web_crawler_data_source for websites
- * - spaces_data_source for files/text (uploaded to our Spaces bucket)
  */
 export async function addSourceToKb(
   orgId: string,
@@ -428,13 +318,11 @@ export async function addSourceToKb(
   const kb = await prisma.knowledgeBase.findUniqueOrThrow({ where: { id: kbId } });
   const source = await prisma.knowledgeSource.findUniqueOrThrow({ where: { id: sourceId } });
 
-  // If KB has no DO KB yet, create the entire KB with all sources
   if (!kb.gradientKbUuid) {
     await createKnowledgeBaseKb(orgId, kbId);
     return;
   }
 
-  // Build the datasource payload
   const datasource = buildDatasource(source);
   if (!datasource) {
     await prisma.knowledgeSource.update({
@@ -446,7 +334,6 @@ export async function addSourceToKb(
   }
 
   try {
-    // Mark source as indexing
     await prisma.knowledgeSource.update({
       where: { id: sourceId },
       data: { indexingStatus: "indexing" },
@@ -454,24 +341,8 @@ export async function addSourceToKb(
     eventBus.emit(orgId, { type: "kb:source:status", id: sourceId, status: "indexing", kbId });
     await updateKbStatus(orgId, kbId);
 
-    const doToken = getDoToken();
-
-    // Add datasource to existing KB (web_crawler or spaces_data_source)
-    const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kb.gradientKbUuid}/data_sources`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${doToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(datasource),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Failed to add datasource: ${res.status} ${text}`);
-    }
-
-    const dsData = await res.json();
+    // Add datasource to existing KB
+    const dsData = await kbApi.addDataSource(kb.gradientKbUuid, datasource);
     const datasourceUuid = dsData.knowledge_base_data_source?.uuid;
 
     if (datasourceUuid) {
@@ -480,11 +351,9 @@ export async function addSourceToKb(
         data: { gradientDatasourceUuid: datasourceUuid },
       });
 
-      // Trigger indexing for this new datasource
       await waitForKbReadyAndIndex(kb.gradientKbUuid, [datasourceUuid]);
     }
 
-    // Wait for indexing to complete
     const indexResult = await waitForKbIndexingComplete(kb.gradientKbUuid);
 
     if (indexResult === "succeeded") {
@@ -502,7 +371,6 @@ export async function addSourceToKb(
       eventBus.emit(orgId, { type: "kb:source:status", id: sourceId, status: "failed", kbId });
       console.error(`[addSourceToKb] Source ${sourceId} indexing failed`);
     } else {
-      // timeout — keep as indexing
       console.warn(`[addSourceToKb] Source ${sourceId} indexing timed out, status remains indexing`);
     }
     await updateKbStatus(orgId, kbId);
@@ -524,23 +392,7 @@ export async function removeSourceFromKb(
   kbUuid: string,
   datasourceUuid: string,
 ): Promise<void> {
-  const doToken = getDoToken();
-
-  const res = await fetch(
-    `${DO_API_BASE}/knowledge_bases/${kbUuid}/data_sources/${datasourceUuid}`,
-    {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${doToken}` },
-    },
-  ).catch((err) => {
-    console.error("[removeSourceFromKb] Network error:", err);
-    return null;
-  });
-
-  if (res && !res.ok) {
-    const text = await res.text();
-    console.error(`[removeSourceFromKb] Failed: ${res.status} ${text}`);
-  }
+  await kbApi.deleteDataSource(kbUuid, datasourceUuid);
 }
 
 /**
@@ -570,29 +422,16 @@ async function updateKbStatus(orgId: string, kbId: string): Promise<void> {
   eventBus.emit(orgId, { type: "kb:status", id: kbId, status });
 }
 
-// ─── Helpers ────────────────────────────────────────────
+// ─── Indexing helpers ────────────────────────────────────
 
 /**
- * Fetch datasource details for a KB from DO API.
+ * Trigger an indexing job for specific data sources in a KB.
  */
-async function fetchDatasources(kbUuid: string): Promise<Array<{ uuid: string; last_datasource_indexing_job?: { status?: string } }>> {
-  const doToken = getDoToken();
-  const dsRes = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}/data_sources`, {
-    headers: { Authorization: `Bearer ${doToken}` },
-  });
-  if (dsRes.ok) {
-    const dsData = await dsRes.json();
-    return dsData.knowledge_base_data_sources || dsData.data_sources || [];
-  }
-  return [];
-}
-
-/**
- * Fetch datasource UUIDs for a KB from DO API.
- */
-async function fetchDatasourceUuids(kbUuid: string): Promise<string[]> {
-  const datasources = await fetchDatasources(kbUuid);
-  return datasources.map((ds) => ds.uuid);
+export async function triggerIndexing(
+  kbUuid: string,
+  dataSourceUuids: string[],
+): Promise<void> {
+  await indexingApi.createIndexingJob(kbUuid, dataSourceUuids);
 }
 
 /**
@@ -624,24 +463,15 @@ async function waitForKbReadyAndIndex(
 
 /**
  * Wait for all indexing jobs on a KB to complete.
- * Checks both KB-level last_indexing_job.phase AND individual datasource statuses.
- * Returns the result: "succeeded", "failed", or "timeout".
  */
 async function waitForKbIndexingComplete(
   kbUuid: string,
   maxAttempts = 60,
   intervalMs = 5000,
 ): Promise<"succeeded" | "failed" | "timeout"> {
-  const doToken = getDoToken();
-
   for (let i = 0; i < maxAttempts; i++) {
-    // 1. Check KB-level indexing job phase
-    const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
-      headers: { Authorization: `Bearer ${doToken}` },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      const data = await kbApi.getKnowledgeBase(kbUuid);
       const job = data.knowledge_base?.last_indexing_job;
       const phase = (job?.phase as string) || "";
       const jobStatus = (job?.status as string) || "";
@@ -650,35 +480,26 @@ async function waitForKbIndexingComplete(
         console.log(`[waitForKbIndexingComplete] KB ${kbUuid} phase=${phase} status=${jobStatus}`);
       }
 
-      // Check phase
       if (phase.includes("SUCCEEDED") || phase.includes("COMPLETED")) {
-        console.log(`[waitForKbIndexingComplete] KB ${kbUuid} indexing succeeded: ${phase}`);
         return "succeeded";
       }
       if (phase.includes("FAILED") || phase.includes("ERROR")) {
-        console.log(`[waitForKbIndexingComplete] KB ${kbUuid} indexing failed: ${phase}`);
         return "failed";
       }
-
-      // Check job status as fallback
       if (jobStatus.includes("COMPLETED") || jobStatus.includes("NO_CHANGES")) {
-        console.log(`[waitForKbIndexingComplete] KB ${kbUuid} job status: ${jobStatus}`);
         return "succeeded";
       }
       if (jobStatus.includes("FAILED")) {
-        console.log(`[waitForKbIndexingComplete] KB ${kbUuid} job status: ${jobStatus}`);
         return "failed";
       }
+    } catch {
+      // Network error — retry
     }
 
-    // 2. Fallback: check individual datasource statuses
-    // Useful when last_indexing_job is null (e.g., auto-indexing on creation)
+    // Fallback: check individual datasource statuses
     if (i > 0 && i % 3 === 0) {
       const dsResult = await checkDatasourceIndexingStatuses(kbUuid);
-      if (dsResult) {
-        console.log(`[waitForKbIndexingComplete] KB ${kbUuid} datasource check: ${dsResult}`);
-        return dsResult;
-      }
+      if (dsResult) return dsResult;
     }
 
     if (i % 6 === 0) {
@@ -687,51 +508,49 @@ async function waitForKbIndexingComplete(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 
-  // Final datasource check before giving up
+  // Final check before giving up
   const finalCheck = await checkDatasourceIndexingStatuses(kbUuid);
-  if (finalCheck) {
-    console.log(`[waitForKbIndexingComplete] KB ${kbUuid} final datasource check: ${finalCheck}`);
-    return finalCheck;
-  }
+  if (finalCheck) return finalCheck;
 
   console.warn(`[waitForKbIndexingComplete] KB ${kbUuid} indexing did not complete in time`);
   return "timeout";
 }
 
 /**
- * Check if all datasources in a KB have completed indexing by
- * inspecting each datasource's last_datasource_indexing_job.status.
- * Returns null if any datasource is still in progress or has no status.
+ * Check if all datasources in a KB have completed indexing.
  */
 async function checkDatasourceIndexingStatuses(
   kbUuid: string,
 ): Promise<"succeeded" | "failed" | null> {
-  const datasources = await fetchDatasources(kbUuid);
-  if (datasources.length === 0) return null;
+  try {
+    const datasources = await kbApi.listDataSources(kbUuid);
+    if (datasources.length === 0) return null;
 
-  let allTerminal = true;
-  let anyFailed = false;
+    let allTerminal = true;
+    let anyFailed = false;
 
-  for (const ds of datasources) {
-    const status = (ds.last_datasource_indexing_job?.status || "") as string;
-    if (!status || status.includes("UNKNOWN") || status.includes("IN_PROGRESS")) {
-      allTerminal = false;
-      break;
+    for (const ds of datasources) {
+      const status = (ds.last_datasource_indexing_job?.status || "") as string;
+      if (!status || status.includes("UNKNOWN") || status.includes("IN_PROGRESS")) {
+        allTerminal = false;
+        break;
+      }
+      if (status.includes("FAILED") || status.includes("CANCELLED")) {
+        anyFailed = true;
+      }
     }
-    if (status.includes("FAILED") || status.includes("CANCELLED")) {
-      anyFailed = true;
-    }
+
+    if (!allTerminal) return null;
+    return anyFailed ? "failed" : "succeeded";
+  } catch {
+    return null;
   }
-
-  if (!allTerminal) return null;
-  return anyFailed ? "failed" : "succeeded";
 }
 
 // ─── Stale status recovery ──────────────────────────────
 
 /**
- * Reconcile KBs stuck in "indexing"/"creating" by checking DO API
- * and updating our DB to match. Called from the GET /api/knowledge-bases route.
+ * Reconcile KBs stuck in "indexing"/"creating" by checking DO API.
  */
 export async function reconcileStaleKbStatuses(
   orgId: string,
@@ -742,16 +561,14 @@ export async function reconcileStaleKbStatuses(
 
     try {
       // Check datasource-level statuses from DO
-      const datasources = await fetchDatasources(kb.gradientKbUuid);
+      const datasources = await kbApi.listDataSources(kb.gradientKbUuid);
 
-      // Build a map of DO datasource UUID → status
       const doStatusMap = new Map<string, string>();
       for (const ds of datasources) {
         const status = ds.last_datasource_indexing_job?.status || "";
         doStatusMap.set(ds.uuid, status);
       }
 
-      // Update each source's status based on DO data
       for (const source of kb.sources) {
         if (!source.gradientDatasourceUuid) continue;
         const doStatus = doStatusMap.get(source.gradientDatasourceUuid) || "";
@@ -762,7 +579,6 @@ export async function reconcileStaleKbStatuses(
         } else if (doStatus.includes("FAILED") || doStatus.includes("CANCELLED")) {
           newStatus = "failed";
         }
-        // If still IN_PROGRESS or UNKNOWN, leave as is
 
         if (newStatus) {
           await prisma.knowledgeSource.update({
@@ -773,21 +589,18 @@ export async function reconcileStaleKbStatuses(
         }
       }
 
-      // Also check KB-level job status
-      const doToken = getDoToken();
-      const kbRes = await fetch(`${DO_API_BASE}/knowledge_bases/${kb.gradientKbUuid}`, {
-        headers: { Authorization: `Bearer ${doToken}` },
-      });
-      if (kbRes.ok) {
-        const kbData = await kbRes.json();
+      // Check KB-level job status
+      try {
+        const kbData = await kbApi.getKnowledgeBase(kb.gradientKbUuid);
         const phase = (kbData.knowledge_base?.last_indexing_job?.phase as string) || "";
         if (phase.includes("SUCCEEDED") || phase.includes("COMPLETED")) {
-          // All done — mark any remaining "indexing" sources as "ready"
           await prisma.knowledgeSource.updateMany({
             where: { knowledgeBaseId: kb.id, indexingStatus: { in: ["indexing", "creating", "pending"] } },
             data: { indexingStatus: "ready" },
           });
         }
+      } catch {
+        // KB fetch failed — skip
       }
 
       // Recompute KB status from sources
@@ -800,47 +613,9 @@ export async function reconcileStaleKbStatuses(
   }
 }
 
-// ─── Low-level DO API helpers ───────────────────────────
-
 /**
- * Trigger an indexing job for specific data sources in a KB.
- */
-export async function triggerIndexing(
-  kbUuid: string,
-  dataSourceUuids: string[],
-): Promise<void> {
-  const doToken = getDoToken();
-
-  const res = await fetch(`${DO_API_BASE}/indexing_jobs`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${doToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      knowledge_base_uuid: kbUuid,
-      data_source_uuids: dataSourceUuids,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`[triggerIndexing] Failed: ${res.status} ${text}`);
-  }
-}
-
-/**
- * Delete a knowledge base entirely.
+ * Delete a knowledge base from DO.
  */
 export async function deleteKnowledgeBase(kbUuid: string): Promise<void> {
-  const doToken = getDoToken();
-
-  const res = await fetch(`${DO_API_BASE}/knowledge_bases/${kbUuid}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${doToken}` },
-  }).catch((err) => { console.error("[deleteKnowledgeBase] Network error:", err); return null; });
-  if (res && !res.ok) {
-    const text = await res.text();
-    console.error(`[deleteKnowledgeBase] Failed: ${res.status} ${text}`);
-  }
+  await kbApi.deleteKnowledgeBase(kbUuid);
 }

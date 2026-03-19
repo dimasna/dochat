@@ -85,19 +85,22 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Generate AI response if subscription active and conversation unresolved
+    // Generate AI response if conversation unresolved and (subscription active OR playground)
     const subscription = await prisma.subscription.findUnique({
       where: { orgId: conversation.orgId },
     });
 
     let assistantMessage = null;
 
-    if (
+    const canGenerateResponse =
       conversation.status === "unresolved" &&
-      subscription?.status === "active"
-    ) {
-      // Check message credit limit before generating AI response
-      await checkMessageCreditLimit(conversation.orgId);
+      (isPlayground || subscription?.status === "active");
+
+    if (canGenerateResponse) {
+      // Check message credit limit (skip for playground sessions)
+      if (!isPlayground) {
+        await checkMessageCreditLimit(conversation.orgId);
+      }
       try {
         const agentResponse = await generateAgentResponse(
           conversationId,

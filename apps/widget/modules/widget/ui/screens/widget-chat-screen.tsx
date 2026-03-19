@@ -145,40 +145,54 @@ export const WidgetChatScreen = () => {
   useEffect(() => {
     if (!conversationId || !contactSession?.sessionToken) return;
 
-    const url = api.getMessagesStreamUrl(conversationId, contactSession.sessionToken);
-    const es = new EventSource(url);
-    eventSourceRef.current = es;
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
 
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "init") {
-          setMessages(data.messages);
-        } else if (data.type === "message") {
-          if (data.message.role === "assistant" || data.message.role === "support") {
-            setIsTyping(false);
+    const connect = () => {
+      const url = api.getMessagesStreamUrl(conversationId, contactSession.sessionToken);
+      const es = new EventSource(url);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          retryCount = 0; // reset on successful message
+          const data = JSON.parse(event.data);
+          if (data.type === "init") {
+            setMessages(data.messages);
+          } else if (data.type === "message") {
+            if (data.message.role === "assistant" || data.message.role === "support") {
+              setIsTyping(false);
+            }
+            setMessages((prev) => {
+              // Deduplicate and replace optimistic temp messages
+              const filtered = prev.filter(
+                (m) => m.id !== data.message.id && !m.id.startsWith("temp-"),
+              );
+              return [...filtered, data.message];
+            });
+          } else if (data.type === "status") {
+            setConversationStatus(data.status);
           }
-          setMessages((prev) => {
-            // Deduplicate and replace optimistic temp messages
-            const filtered = prev.filter(
-              (m) => m.id !== data.message.id && !m.id.startsWith("temp-"),
-            );
-            return [...filtered, data.message];
-          });
-        } else if (data.type === "status") {
-          setConversationStatus(data.status);
+        } catch {
+          // Ignore malformed events
         }
-      } catch {
-        // Ignore malformed events
-      }
+      };
+
+      es.onerror = () => {
+        es.close();
+        retryCount++;
+        if (retryCount <= 10) {
+          const delay = Math.min(1000 * 2 ** retryCount, 30000);
+          retryTimer = setTimeout(connect, delay);
+        }
+      };
     };
 
-    es.onerror = () => {
-      es.close();
-    };
+    connect();
 
     return () => {
-      es.close();
+      clearTimeout(retryTimer);
+      eventSourceRef.current?.close();
       eventSourceRef.current = null;
     };
   }, [conversationId, contactSession?.sessionToken]);

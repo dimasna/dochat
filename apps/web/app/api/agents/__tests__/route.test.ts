@@ -14,6 +14,7 @@ vi.mock("@dochat/db", () => ({
 vi.mock("@/lib/auth", () => ({
   getAuthUser: vi.fn(),
   getErrorStatus: vi.fn().mockReturnValue(500),
+  ensureOrgSubscription: vi.fn(),
 }));
 
 vi.mock("@/lib/agent", () => ({

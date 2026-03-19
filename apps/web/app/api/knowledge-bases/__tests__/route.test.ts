@@ -7,6 +7,9 @@ vi.mock("@dochat/db", () => ({
       findMany: vi.fn(),
       create: vi.fn(),
     },
+    subscription: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
@@ -45,8 +48,8 @@ describe("GET /api/knowledge-bases", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body).toHaveLength(1);
-    expect(body[0].name).toBe("Docs KB");
+    expect(body.knowledgeBases).toHaveLength(1);
+    expect(body.knowledgeBases[0].name).toBe("Docs KB");
   });
 
   it("triggers reconciliation for stale indexing KBs", async () => {

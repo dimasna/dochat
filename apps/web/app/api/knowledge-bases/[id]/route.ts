@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
 import { deleteKnowledgeBase } from "@/lib/knowledge-base";
-import { detachKbFromAgent } from "@/lib/agent";
+import { syncAgentKbs } from "@/lib/agent";
 
 export async function PATCH(
   req: NextRequest,
@@ -59,23 +59,31 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Collect affected agents before cascade delete
+    // Collect affected agents and their remaining KB UUIDs before cascade delete
     const affectedAgents = kb.agents.map((akb) => akb.agent);
 
     // Delete the DO KB
     if (kb.gradientKbUuid) {
       await deleteKnowledgeBase(kb.gradientKbUuid);
-
-      // Detach from all affected DO agents (fire-and-forget)
-      for (const agent of affectedAgents) {
-        detachKbFromAgent(agent.agentUuid, kb.gradientKbUuid).catch((err) =>
-          console.error(`[kb-delete] Failed to detach KB from agent ${agent.id}:`, err),
-        );
-      }
     }
 
     // Cascade deletes sources and AgentKnowledgeBase records
     await prisma.knowledgeBase.delete({ where: { id } });
+
+    // Recreate affected DO agents with their remaining KBs (fire-and-forget)
+    for (const agent of affectedAgents) {
+      const remainingKbs = await prisma.agentKnowledgeBase.findMany({
+        where: { agentId: agent.id },
+        include: { knowledgeBase: true },
+      });
+      const remainingUuids = remainingKbs
+        .map((akb) => akb.knowledgeBase.gradientKbUuid)
+        .filter((uuid): uuid is string => !!uuid);
+
+      syncAgentKbs(agent.id, remainingUuids).catch((err) =>
+        console.error(`[kb-delete] Failed to sync agent ${agent.id}:`, err),
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
