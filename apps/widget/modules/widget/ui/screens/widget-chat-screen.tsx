@@ -234,11 +234,30 @@ export const WidgetChatScreen = () => {
       setConversationId(activeConversationId);
     }
 
-    await api.sendMessage({
+    const response = await api.sendMessage({
       conversationId: activeConversationId,
       sessionToken: contactSession.sessionToken,
       content: values.message,
     });
+
+    // Use API response directly so messages render even if SSE is delayed
+    if (response.userMessage) {
+      setMessages((prev) => {
+        const filtered = prev.filter(
+          (m) => !m.id.startsWith("temp-") && m.id !== response.userMessage.id,
+        );
+        return [...filtered, response.userMessage];
+      });
+    }
+    if (response.assistantMessage) {
+      setIsTyping(false);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === response.assistantMessage.id)) return prev;
+        return [...prev, response.assistantMessage];
+      });
+    } else {
+      setIsTyping(false);
+    }
   };
 
   return (
