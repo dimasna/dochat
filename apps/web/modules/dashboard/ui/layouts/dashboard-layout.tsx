@@ -5,12 +5,8 @@ import { DashboardSidebar } from "@/modules/dashboard/ui/components/dashboard-si
 import { TopBar } from "@/modules/dashboard/ui/components/top-bar";
 import { SidebarProvider } from "@workspace/ui/components/sidebar";
 import { Provider } from "jotai";
-import { cookies } from "next/headers";
 
-export const DashboardLayout = async ({ children }: { children: React.ReactNode }) => {
-  const cookieStore = await cookies();
-  const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
-
+export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   return (
     <AuthGuard>
       <OrganizationGuard>
@@ -19,7 +15,7 @@ export const DashboardLayout = async ({ children }: { children: React.ReactNode 
             <div className="flex h-screen flex-col">
               <TopBar />
               <div className="flex flex-1 min-h-0 overflow-hidden [&_[data-slot=sidebar-container]]:top-14 [&_[data-slot=sidebar-container]]:h-[calc(100svh-3.5rem)] [&_[data-slot=sidebar-wrapper]]:min-h-0">
-                <SidebarProvider defaultOpen={defaultOpen}>
+                <SidebarProvider open>
                   <DashboardSidebar />
                   <main className="flex flex-1 flex-col min-h-0 overflow-auto">
                     {children}
