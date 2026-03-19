@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
-import { getAuthUser, getErrorStatus } from "@/lib/auth";
+import { getAuthUser, getErrorStatus, ensureOrgSubscription } from "@/lib/auth";
 import { provisionAgent, tryFinalizeAgent } from "@/lib/agent";
 import { checkAgentLimit } from "@/lib/limits";
 
@@ -10,6 +10,9 @@ export async function GET() {
     if (!orgId) {
       return NextResponse.json({ error: "No organization" }, { status: 400 });
     }
+
+    // Ensure a subscription record exists for this org (creates free plan if missing)
+    await ensureOrgSubscription(orgId);
 
     const agents = await prisma.agent.findMany({
       where: { orgId },

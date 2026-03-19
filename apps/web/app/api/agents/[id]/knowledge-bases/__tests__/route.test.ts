@@ -133,7 +133,7 @@ describe("POST /api/agents/:id/knowledge-bases", () => {
 
     // Wait for fire-and-forget
     await new Promise((r) => setTimeout(r, 10));
-    expect(syncAgentKbs).toHaveBeenCalledWith("do-agent-uuid", ["do-kb-1", "do-kb-2"]);
+    expect(syncAgentKbs).toHaveBeenCalledWith("agent-1", ["do-kb-1", "do-kb-2"]);
   });
 
   it("returns 400 when agent is provisioning", async () => {
@@ -232,7 +232,7 @@ describe("DELETE /api/agents/:id/knowledge-bases", () => {
     await DELETE(req, mockParams);
 
     await new Promise((r) => setTimeout(r, 10));
-    expect(syncAgentKbs).toHaveBeenCalledWith("do-agent-uuid", ["do-kb-2"]);
+    expect(syncAgentKbs).toHaveBeenCalledWith("agent-1", ["do-kb-2"]);
   });
 
   it("returns 404 when KB is not attached to agent", async () => {

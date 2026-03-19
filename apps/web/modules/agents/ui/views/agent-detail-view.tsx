@@ -79,12 +79,12 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
   });
 
   // Fetch org-level knowledge bases for attaching
-  const { data: orgKbs = [] } = useQuery<Array<{
+  const { data: orgKbsData } = useQuery<{ knowledgeBases: Array<{
     id: string;
     name: string;
     indexingStatus: string;
     _count: { sources: number };
-  }>>({
+  }>; dbProvisioning: boolean }>({
     queryKey: ["knowledge-bases"],
     queryFn: async () => {
       const res = await fetch("/api/knowledge-bases");
@@ -92,6 +92,7 @@ export const AgentDetailView = ({ agentId }: { agentId: string }) => {
       return res.json();
     },
   });
+  const orgKbs = orgKbsData?.knowledgeBases ?? [];
 
   const isProvisioning = agent?.status === "provisioning";
   const isRecovering = agent?.status === "recovering";

@@ -127,7 +127,7 @@ describe("provisionAgent", () => {
     });
 
     await expect(provisionAgent("org-1", "Test")).rejects.toThrow(
-      "Failed to create agent: 500",
+      "DO API error 500 on POST /agents",
     );
   });
 });

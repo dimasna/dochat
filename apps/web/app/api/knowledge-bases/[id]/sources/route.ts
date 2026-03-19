@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@dochat/db";
 import { getAuthUser, getErrorStatus } from "@/lib/auth";
-import { uploadFileToDo, uploadToSpaces, addSourceToKb } from "@/lib/knowledge-base";
+import { uploadToSpaces, addSourceToKb } from "@/lib/knowledge-base";
 import { checkSourceLimit } from "@/lib/limits";
 
 export async function POST(
@@ -21,6 +21,29 @@ export async function POST(
     }
 
     await checkSourceLimit(orgId, kbId);
+
+    // Block source addition while OpenSearch DB is provisioning (paid plans only).
+    // Free users share a pre-provisioned DB so they're never blocked.
+    const sub = await prisma.subscription.findUnique({
+      where: { orgId },
+      select: { plan: true },
+    });
+    if ((sub?.plan ?? "free") !== "free") {
+      const allKbs = await prisma.knowledgeBase.findMany({
+        where: { orgId },
+        select: { indexingStatus: true },
+      });
+      const hasReady = allKbs.some((k) => k.indexingStatus === "ready");
+      const hasInProgress = allKbs.some((k) =>
+        ["creating", "indexing"].includes(k.indexingStatus),
+      );
+      if (allKbs.length > 0 && !hasReady && hasInProgress) {
+        return NextResponse.json(
+          { error: "Database is still provisioning. Please wait until the current indexing completes." },
+          { status: 409 },
+        );
+      }
+    }
 
     const formData = await req.formData();
     const sourceType = (formData.get("sourceType") as string) || "file";
@@ -54,16 +77,7 @@ async function handleFileSource(formData: FormData, kbId: string) {
   if (!file) throw new Error("No file provided");
 
   const fileBuffer = await file.arrayBuffer();
-
-  // Spaces is the primary upload path (used by addSourceToKb for spaces_data_source).
-  // Presigned URL is best-effort (legacy fallback for file_upload_data_source during KB creation).
-  const [storedObjectKey, spacesObjectKey] = await Promise.all([
-    uploadFileToDo(file.name, file.size, fileBuffer).catch((err) => {
-      console.warn("[handleFileSource] Presigned URL upload failed (non-critical):", err.message);
-      return null;
-    }),
-    uploadToSpaces(file.name, fileBuffer, kbId, file.type || undefined),
-  ]);
+  const spacesObjectKey = await uploadToSpaces(file.name, fileBuffer, kbId, file.type || undefined);
 
   return prisma.knowledgeSource.create({
     data: {
@@ -71,7 +85,6 @@ async function handleFileSource(formData: FormData, kbId: string) {
       sourceType: "file",
       title: file.name,
       fileName: file.name,
-      storedObjectKey,
       spacesObjectKey,
       mimeType: file.type,
       fileSize: file.size,
@@ -105,14 +118,12 @@ async function handleTextSource(formData: FormData, kbId: string) {
   const fileName = `${safeTitle}.txt`;
   const textBuffer = new TextEncoder().encode(content);
 
-  // Spaces is the primary upload path. Presigned URL is best-effort.
-  const [storedObjectKey, spacesObjectKey] = await Promise.all([
-    uploadFileToDo(fileName, textBuffer.byteLength, textBuffer.buffer as ArrayBuffer).catch((err) => {
-      console.warn("[handleTextSource] Presigned URL upload failed (non-critical):", err.message);
-      return null;
-    }),
-    uploadToSpaces(fileName, textBuffer.buffer as ArrayBuffer, kbId, "text/plain"),
-  ]);
+  const spacesObjectKey = await uploadToSpaces(
+    fileName,
+    textBuffer.buffer as ArrayBuffer,
+    kbId,
+    "text/plain",
+  );
 
   return prisma.knowledgeSource.create({
     data: {
@@ -120,7 +131,6 @@ async function handleTextSource(formData: FormData, kbId: string) {
       sourceType: "text",
       title,
       fileName,
-      storedObjectKey,
       spacesObjectKey,
       mimeType: "text/plain",
       fileSize: textBuffer.byteLength,

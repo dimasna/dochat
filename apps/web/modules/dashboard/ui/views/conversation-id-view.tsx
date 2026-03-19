@@ -70,34 +70,58 @@ export const ConversationIdView = ({
       },
     });
 
+  // Fallback: populate messages from conversation query when SSE hasn't loaded yet
+  useEffect(() => {
+    if (conversation?.messages && messages.length === 0) {
+      setMessages(conversation.messages);
+    }
+  }, [conversation?.messages, messages.length]);
+
   // SSE for real-time messages
   useEffect(() => {
-    const eventSource = new EventSource(
-      `/api/conversations/${conversationId}/messages/stream`,
-    );
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let eventSource: EventSource | null = null;
 
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "init") {
-        setMessages(data.messages);
-      } else if (data.type === "message") {
-        setMessages((prev) => {
-          const exists = prev.some((m) => m.id === data.message.id);
-          if (exists) return prev;
-          return [...prev, data.message];
-        });
-      } else if (data.type === "status") {
-        queryClient.invalidateQueries({
-          queryKey: ["conversation", conversationId],
-        });
-      }
+    const connect = () => {
+      eventSource = new EventSource(
+        `/api/conversations/${conversationId}/messages/stream`,
+      );
+
+      eventSource.onmessage = (event) => {
+        retryCount = 0; // reset on successful message
+        const data = JSON.parse(event.data);
+        if (data.type === "init") {
+          setMessages(data.messages);
+        } else if (data.type === "message") {
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === data.message.id);
+            if (exists) return prev;
+            return [...prev, data.message];
+          });
+        } else if (data.type === "status") {
+          queryClient.invalidateQueries({
+            queryKey: ["conversation", conversationId],
+          });
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+        retryCount++;
+        if (retryCount <= 5) {
+          const delay = Math.min(1000 * 2 ** retryCount, 30000);
+          retryTimer = setTimeout(connect, delay);
+        }
+      };
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
-    };
+    connect();
 
-    return () => eventSource.close();
+    return () => {
+      clearTimeout(retryTimer);
+      eventSource?.close();
+    };
   }, [conversationId, queryClient]);
 
   const form = useForm<z.infer<typeof formSchema>>({

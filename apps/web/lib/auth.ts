@@ -1,4 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@dochat/db";
 import { LimitError } from "./limits";
 
 export class AuthError extends Error {
@@ -26,6 +27,18 @@ export async function getAuthUser(orgId?: string) {
     userId,
     orgId: activeOrgId,
   };
+}
+
+/**
+ * Ensure a subscription record exists for an org.
+ * Creates a default free/active subscription if missing.
+ */
+export async function ensureOrgSubscription(orgId: string) {
+  await prisma.subscription.upsert({
+    where: { orgId },
+    update: {},
+    create: { orgId, status: "active", plan: "free" },
+  });
 }
 
 /**

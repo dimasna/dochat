@@ -206,6 +206,40 @@ describe("POST /api/embed/chat", () => {
     expect(generateAgentResponse).not.toHaveBeenCalled();
   });
 
+  it("generates AI response for playground session without active subscription", async () => {
+    vi.mocked(prisma.contactSession.findUnique).mockResolvedValue({
+      id: "s1", expiresAt: new Date(Date.now() + 60000),
+      metadata: { isPlayground: true },
+    } as never);
+    vi.mocked(prisma.conversation.findUnique).mockResolvedValue({
+      id: "c1", contactSessionId: "s1", agentId: "a1", orgId: "org-1",
+      status: "unresolved",
+    } as never);
+    vi.mocked(prisma.agent.findUnique).mockResolvedValue({
+      id: "a1", isPublic: false,
+    } as never);
+    vi.mocked(prisma.subscription.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.message.create)
+      .mockResolvedValueOnce({
+        id: "m1", role: "user", content: "Hello", createdAt: new Date(),
+      } as never)
+      .mockResolvedValueOnce({
+        id: "m2", role: "assistant", content: "Hi!", createdAt: new Date(),
+      } as never);
+    vi.mocked(prisma.conversation.update).mockResolvedValue({} as never);
+    vi.mocked(generateAgentResponse).mockResolvedValue({ content: "Hi!" });
+
+    const res = await POST(makeRequest({
+      conversationId: "c1", sessionToken: "tok", content: "Hello",
+    }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.assistantMessage.role).toBe("assistant");
+    expect(generateAgentResponse).toHaveBeenCalled();
+    expect(checkMessageCreditLimit).not.toHaveBeenCalled();
+  });
+
   it("returns fallback message when agent response fails", async () => {
     vi.mocked(prisma.contactSession.findUnique).mockResolvedValue({
       id: "s1", expiresAt: new Date(Date.now() + 60000),

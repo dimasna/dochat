@@ -3,8 +3,9 @@ import { NextRequest } from "next/server";
 
 vi.mock("@dochat/db", () => ({
   prisma: {
-    knowledgeBase: { findUnique: vi.fn() },
+    knowledgeBase: { findUnique: vi.fn(), findMany: vi.fn() },
     knowledgeSource: { create: vi.fn(), count: vi.fn() },
+    subscription: { findUnique: vi.fn() },
   },
 }));
 
@@ -17,7 +18,6 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/knowledge-base", () => ({
-  uploadFileToDo: vi.fn(),
   uploadToSpaces: vi.fn(),
   addSourceToKb: vi.fn(),
 }));
@@ -34,7 +34,7 @@ vi.mock("@/lib/limits", () => ({
 
 import { prisma } from "@dochat/db";
 import { getAuthUser } from "@/lib/auth";
-import { uploadFileToDo, uploadToSpaces, addSourceToKb } from "@/lib/knowledge-base";
+import { uploadToSpaces, addSourceToKb } from "@/lib/knowledge-base";
 import { checkSourceLimit } from "@/lib/limits";
 import { POST } from "../route";
 
@@ -141,12 +141,11 @@ describe("POST /api/knowledge-bases/:id/sources", () => {
     vi.mocked(prisma.knowledgeBase.findUnique).mockResolvedValue({
       id: "kb-1", orgId: "org-1",
     } as never);
-    vi.mocked(uploadFileToDo).mockResolvedValue("stored/obj/key");
     vi.mocked(uploadToSpaces).mockResolvedValue("kb-sources/kb-1/test.pdf");
     vi.mocked(prisma.knowledgeSource.create).mockResolvedValue({
       id: "src-1", knowledgeBaseId: "kb-1", sourceType: "file",
       title: "test.pdf", fileName: "test.pdf",
-      storedObjectKey: "stored/obj/key", spacesObjectKey: "kb-sources/kb-1/test.pdf",
+      spacesObjectKey: "kb-sources/kb-1/test.pdf",
       mimeType: "application/pdf", fileSize: 1024,
     } as never);
 
@@ -160,7 +159,6 @@ describe("POST /api/knowledge-bases/:id/sources", () => {
 
     expect(res.status).toBe(201);
     expect(body.sourceType).toBe("file");
-    expect(uploadFileToDo).toHaveBeenCalled();
     expect(uploadToSpaces).toHaveBeenCalled();
   });
 
@@ -168,12 +166,11 @@ describe("POST /api/knowledge-bases/:id/sources", () => {
     vi.mocked(prisma.knowledgeBase.findUnique).mockResolvedValue({
       id: "kb-1", orgId: "org-1",
     } as never);
-    vi.mocked(uploadFileToDo).mockResolvedValue("stored/obj/key");
     vi.mocked(uploadToSpaces).mockResolvedValue("kb-sources/kb-1/My_FAQ.txt");
     vi.mocked(prisma.knowledgeSource.create).mockResolvedValue({
       id: "src-1", knowledgeBaseId: "kb-1", sourceType: "text",
       title: "My FAQ", fileName: "My_FAQ.txt",
-      storedObjectKey: "stored/obj/key", spacesObjectKey: "kb-sources/kb-1/My_FAQ.txt",
+      spacesObjectKey: "kb-sources/kb-1/My_FAQ.txt",
       mimeType: "text/plain", fileSize: 50,
     } as never);
 
@@ -187,7 +184,6 @@ describe("POST /api/knowledge-bases/:id/sources", () => {
 
     expect(res.status).toBe(201);
     expect(body.sourceType).toBe("text");
-    expect(uploadFileToDo).toHaveBeenCalled();
     expect(uploadToSpaces).toHaveBeenCalled();
   });
 
@@ -222,40 +218,10 @@ describe("POST /api/knowledge-bases/:id/sources", () => {
     expect(addSourceToKb).toHaveBeenCalledWith("org-1", "kb-1", "src-1");
   });
 
-  it("succeeds even when presigned URL upload fails (Spaces is primary)", async () => {
-    vi.mocked(prisma.knowledgeBase.findUnique).mockResolvedValue({
-      id: "kb-1", orgId: "org-1",
-    } as never);
-    vi.mocked(uploadFileToDo).mockRejectedValue(new Error("Failed to get presigned URL: 400"));
-    vi.mocked(uploadToSpaces).mockResolvedValue("kb-sources/kb-1/test.pdf");
-    vi.mocked(prisma.knowledgeSource.create).mockResolvedValue({
-      id: "src-1", knowledgeBaseId: "kb-1", sourceType: "file",
-      title: "test.pdf", fileName: "test.pdf",
-      storedObjectKey: null, spacesObjectKey: "kb-sources/kb-1/test.pdf",
-      mimeType: "application/pdf", fileSize: 4,
-    } as never);
-
-    const file = new File(["data"], "test.pdf", { type: "application/pdf" });
-    const fd = new FormData();
-    fd.append("sourceType", "file");
-    fd.append("file", file);
-
-    const res = await POST(makeRequest(fd), mockParams);
-
-    expect(res.status).toBe(201);
-    expect(prisma.knowledgeSource.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        storedObjectKey: null,
-        spacesObjectKey: "kb-sources/kb-1/test.pdf",
-      }),
-    });
-  });
-
   it("returns 500 when Spaces upload fails", async () => {
     vi.mocked(prisma.knowledgeBase.findUnique).mockResolvedValue({
       id: "kb-1", orgId: "org-1",
     } as never);
-    vi.mocked(uploadFileToDo).mockResolvedValue("stored/obj/key");
     vi.mocked(uploadToSpaces).mockRejectedValue(new Error("SPACES_ACCESS_KEY_ID and SPACES_SECRET_ACCESS_KEY must be configured"));
 
     const file = new File(["data"], "test.pdf", { type: "application/pdf" });
