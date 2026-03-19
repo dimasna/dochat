@@ -78,43 +78,6 @@ export async function GET(
         }
       });
 
-      // Poll DB for new messages every 3s (works across processes in prod)
-      let lastStatus = conversation.status;
-      const poll = setInterval(async () => {
-        try {
-          const latest = await prisma.message.findMany({
-            where: { conversationId },
-            orderBy: { createdAt: "asc" },
-          });
-
-          for (const msg of latest) {
-            if (!knownIds.has(msg.id)) {
-              knownIds.add(msg.id);
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "message", message: msg })}\n\n`,
-                ),
-              );
-            }
-          }
-
-          const conv = await prisma.conversation.findUnique({
-            where: { id: conversationId },
-            select: { status: true },
-          });
-          if (conv && conv.status !== lastStatus) {
-            lastStatus = conv.status;
-            controller.enqueue(
-              encoder.encode(
-                `data: ${JSON.stringify({ type: "status", status: conv.status })}\n\n`,
-              ),
-            );
-          }
-        } catch {
-          // DB query failed, skip this poll cycle
-        }
-      }, 3000);
-
       // Keep-alive every 30s
       const keepAlive = setInterval(() => {
         try {
@@ -126,7 +89,6 @@ export async function GET(
 
       req.signal.addEventListener("abort", () => {
         unsubscribe();
-        clearInterval(poll);
         clearInterval(keepAlive);
         try {
           controller.close();

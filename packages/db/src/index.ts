@@ -33,3 +33,4 @@ if (process.env.NODE_ENV !== "production")
 
 export { Prisma } from "@prisma/client";
 export type { PrismaClient } from "@prisma/client";
+export { pgNotifyClient } from "./pg-notify";
