@@ -10,12 +10,14 @@
     "db:studio": "dotenv -e ../../.env -- prisma studio"
   },
   "dependencies": {
-    "@prisma/client": "^6.4.1"
+    "@prisma/client": "^6.4.1",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
+    "@types/pg": "^8.18.0",
+    "@workspace/typescript-config": "workspace:*",
     "dotenv-cli": "^11.0.0",
     "prisma": "^6.4.1",
-    "@workspace/typescript-config": "workspace:*",
     "typescript": "^5.7.3"
   },
   "exports": {

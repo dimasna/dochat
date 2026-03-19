@@ -24,7 +24,7 @@ export async function GET(
   // Verify conversation belongs to this org
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { orgId: true },
+    select: { orgId: true, status: true },
   });
 
   if (!conversation || conversation.orgId !== orgId) {
@@ -41,13 +41,15 @@ export async function GET(
         orderBy: { createdAt: "asc" },
       });
 
+      const knownIds = new Set(initialMessages.map((m) => m.id));
+
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({ type: "init", messages: initialMessages })}\n\n`,
         ),
       );
 
-      // Subscribe to event bus for real-time updates
+      // Subscribe to event bus for real-time updates (works in same-process/dev)
       const unsubscribe = eventBus.subscribe(orgId, (event: OrgEvent) => {
         try {
           if (
@@ -55,6 +57,7 @@ export async function GET(
             event.conversationId === conversationId &&
             event.message
           ) {
+            knownIds.add(event.message.id);
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "message", message: event.message })}\n\n`,
@@ -100,6 +103,7 @@ export async function GET(
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });

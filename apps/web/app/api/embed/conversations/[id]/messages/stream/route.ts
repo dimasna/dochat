@@ -55,19 +55,23 @@ export async function GET(
   const orgId = conversation.orgId;
   const encoder = new TextEncoder();
 
+  const messageSelect = {
+    id: true,
+    role: true,
+    content: true,
+    createdAt: true,
+  };
+
   const stream = new ReadableStream({
     async start(controller) {
       // Send initial messages
       const initialMessages = await prisma.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          createdAt: true,
-        },
+        select: messageSelect,
       });
+
+      const knownIds = new Set(initialMessages.map((m) => m.id));
 
       controller.enqueue(
         encoder.encode(
@@ -75,7 +79,7 @@ export async function GET(
         ),
       );
 
-      // Subscribe to event bus for real-time updates
+      // Subscribe to event bus for real-time updates (works in same-process/dev)
       const unsubscribe = eventBus.subscribe(orgId, (event: OrgEvent) => {
         try {
           if (
@@ -83,6 +87,7 @@ export async function GET(
             event.conversationId === conversationId &&
             event.message
           ) {
+            knownIds.add(event.message.id);
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "message", message: event.message })}\n\n`,
@@ -129,6 +134,7 @@ export async function GET(
       ...corsHeaders,
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });
