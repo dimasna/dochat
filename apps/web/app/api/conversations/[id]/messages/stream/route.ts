@@ -24,7 +24,7 @@ export async function GET(
   // Verify conversation belongs to this org
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { orgId: true },
+    select: { orgId: true, status: true },
   });
 
   if (!conversation || conversation.orgId !== orgId) {
@@ -41,13 +41,15 @@ export async function GET(
         orderBy: { createdAt: "asc" },
       });
 
+      const knownIds = new Set(initialMessages.map((m) => m.id));
+
       controller.enqueue(
         encoder.encode(
           `data: ${JSON.stringify({ type: "init", messages: initialMessages })}\n\n`,
         ),
       );
 
-      // Subscribe to event bus for real-time updates
+      // Subscribe to event bus for real-time updates (works in same-process/dev)
       const unsubscribe = eventBus.subscribe(orgId, (event: OrgEvent) => {
         try {
           if (
@@ -55,6 +57,7 @@ export async function GET(
             event.conversationId === conversationId &&
             event.message
           ) {
+            knownIds.add(event.message.id);
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "message", message: event.message })}\n\n`,
@@ -75,6 +78,43 @@ export async function GET(
         }
       });
 
+      // Poll DB for new messages every 3s (works across processes in prod)
+      let lastStatus = conversation.status;
+      const poll = setInterval(async () => {
+        try {
+          const latest = await prisma.message.findMany({
+            where: { conversationId },
+            orderBy: { createdAt: "asc" },
+          });
+
+          for (const msg of latest) {
+            if (!knownIds.has(msg.id)) {
+              knownIds.add(msg.id);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "message", message: msg })}\n\n`,
+                ),
+              );
+            }
+          }
+
+          const conv = await prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { status: true },
+          });
+          if (conv && conv.status !== lastStatus) {
+            lastStatus = conv.status;
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "status", status: conv.status })}\n\n`,
+              ),
+            );
+          }
+        } catch {
+          // DB query failed, skip this poll cycle
+        }
+      }, 3000);
+
       // Keep-alive every 30s
       const keepAlive = setInterval(() => {
         try {
@@ -86,6 +126,7 @@ export async function GET(
 
       req.signal.addEventListener("abort", () => {
         unsubscribe();
+        clearInterval(poll);
         clearInterval(keepAlive);
         try {
           controller.close();
@@ -100,6 +141,7 @@ export async function GET(
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });

@@ -55,19 +55,23 @@ export async function GET(
   const orgId = conversation.orgId;
   const encoder = new TextEncoder();
 
+  const messageSelect = {
+    id: true,
+    role: true,
+    content: true,
+    createdAt: true,
+  };
+
   const stream = new ReadableStream({
     async start(controller) {
       // Send initial messages
       const initialMessages = await prisma.message.findMany({
         where: { conversationId },
         orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          createdAt: true,
-        },
+        select: messageSelect,
       });
+
+      const knownIds = new Set(initialMessages.map((m) => m.id));
 
       controller.enqueue(
         encoder.encode(
@@ -75,7 +79,7 @@ export async function GET(
         ),
       );
 
-      // Subscribe to event bus for real-time updates
+      // Subscribe to event bus for real-time updates (works in same-process/dev)
       const unsubscribe = eventBus.subscribe(orgId, (event: OrgEvent) => {
         try {
           if (
@@ -83,6 +87,7 @@ export async function GET(
             event.conversationId === conversationId &&
             event.message
           ) {
+            knownIds.add(event.message.id);
             controller.enqueue(
               encoder.encode(
                 `data: ${JSON.stringify({ type: "message", message: event.message })}\n\n`,
@@ -103,6 +108,46 @@ export async function GET(
         }
       });
 
+      // Poll DB for new messages every 3s (works across processes in prod)
+      const poll = setInterval(async () => {
+        try {
+          const latest = await prisma.message.findMany({
+            where: { conversationId },
+            orderBy: { createdAt: "asc" },
+            select: messageSelect,
+          });
+
+          for (const msg of latest) {
+            if (!knownIds.has(msg.id)) {
+              knownIds.add(msg.id);
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "message", message: msg })}\n\n`,
+                ),
+              );
+            }
+          }
+
+          // Check for status changes
+          const conv = await prisma.conversation.findUnique({
+            where: { id: conversationId },
+            select: { status: true },
+          });
+          if (conv && conv.status !== lastStatus) {
+            lastStatus = conv.status;
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "status", status: conv.status })}\n\n`,
+              ),
+            );
+          }
+        } catch {
+          // DB query failed, skip this poll cycle
+        }
+      }, 3000);
+
+      let lastStatus = conversation.status;
+
       // Keep-alive every 30s
       const keepAlive = setInterval(() => {
         try {
@@ -114,6 +159,7 @@ export async function GET(
 
       req.signal.addEventListener("abort", () => {
         unsubscribe();
+        clearInterval(poll);
         clearInterval(keepAlive);
         try {
           controller.close();
@@ -129,6 +175,7 @@ export async function GET(
       ...corsHeaders,
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
       Connection: "keep-alive",
     },
   });
