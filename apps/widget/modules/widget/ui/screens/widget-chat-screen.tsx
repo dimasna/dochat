@@ -241,19 +241,20 @@ export const WidgetChatScreen = () => {
     });
 
     // Use API response directly so messages render even if SSE is delayed
-    if (response.userMessage) {
+    const { userMessage, assistantMessage } = response;
+    if (userMessage) {
       setMessages((prev) => {
         const filtered = prev.filter(
-          (m) => !m.id.startsWith("temp-") && m.id !== response.userMessage.id,
+          (m) => !m.id.startsWith("temp-") && m.id !== userMessage.id,
         );
-        return [...filtered, response.userMessage];
+        return [...filtered, userMessage];
       });
     }
-    if (response.assistantMessage) {
+    if (assistantMessage) {
       setIsTyping(false);
       setMessages((prev) => {
-        if (prev.some((m) => m.id === response.assistantMessage.id)) return prev;
-        return [...prev, response.assistantMessage];
+        if (prev.some((m) => m.id === assistantMessage.id)) return prev;
+        return [...prev, assistantMessage];
       });
     } else {
       setIsTyping(false);
