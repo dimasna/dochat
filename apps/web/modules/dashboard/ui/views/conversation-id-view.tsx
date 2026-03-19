@@ -140,9 +140,17 @@ export const ConversationIdView = ({
         },
       );
       if (!res.ok) throw new Error("Failed to send message");
-      return res.json();
+      return res.json() as Promise<{ supportMessage: Message }>;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Render the sent message immediately from API response
+      const msg = data.supportMessage;
+      if (msg) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      }
       queryClient.invalidateQueries({
         queryKey: ["conversation", conversationId],
       });
