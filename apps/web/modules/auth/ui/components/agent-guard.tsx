@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useActiveAgent } from "@/hooks/use-active-agent";
 import { AuthLayout } from "@/modules/auth/ui/layouts/auth-layout";
 
-const EXEMPT_ROUTES = ["/onboarding", "/workspace", "/files", "/billing"];
+const EXEMPT_ROUTES = ["/workspace", "/files", "/billing"];
 
 export const AgentGuard = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
