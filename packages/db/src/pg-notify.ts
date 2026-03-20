@@ -1,10 +1,37 @@
-import { Client } from "pg";
+import { Client, type ClientConfig } from "pg";
 
 type NotificationCallback = (payload: string) => void;
 
 const CHANNEL = "org_events";
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+
+/** Parse DATABASE_URL into pg ClientConfig, stripping Prisma-specific params. */
+function buildClientConfig(): ClientConfig {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set");
+
+  const parsed = new URL(url);
+
+  // Strip Prisma-specific query params that pg doesn't understand
+  parsed.searchParams.delete("connection_limit");
+  parsed.searchParams.delete("pool_timeout");
+  parsed.searchParams.delete("connect_timeout");
+
+  const sslMode = parsed.searchParams.get("sslmode");
+  parsed.searchParams.delete("sslmode");
+
+  const config: ClientConfig = {
+    connectionString: parsed.toString(),
+  };
+
+  // DO Managed PostgreSQL requires SSL but uses managed certs
+  if (sslMode === "require" || sslMode === "prefer") {
+    config.ssl = { rejectUnauthorized: false };
+  }
+
+  return config;
+}
 
 class PgNotifyClient {
   private client: Client | null = null;
@@ -13,12 +40,11 @@ class PgNotifyClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
 
-  /** Send a NOTIFY on the channel. Uses a short-lived connection to avoid blocking the LISTEN connection. */
+  /** Send a NOTIFY on the channel. Uses a short-lived connection. */
   async notify(payload: string): Promise<void> {
-    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    const client = new Client(buildClientConfig());
     try {
       await client.connect();
-      // pg escapes the payload for us via parameterized query
       await client.query(`SELECT pg_notify($1, $2)`, [CHANNEL, payload]);
     } finally {
       await client.end().catch(() => {});
@@ -48,7 +74,7 @@ class PgNotifyClient {
     this.connecting = true;
 
     try {
-      const client = new Client({ connectionString: process.env.DATABASE_URL });
+      const client = new Client(buildClientConfig());
 
       client.on("notification", (msg) => {
         if (msg.channel === CHANNEL && msg.payload) {
